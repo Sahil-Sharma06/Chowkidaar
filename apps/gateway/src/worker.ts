@@ -148,7 +148,10 @@ async function runHcs(db: Db, job: Job, c: Chain) {
 async function runArkiv(db: Db, job: Job, c: Chain) {
   const m = db.select().from(merchants).where(eq(merchants.id, String(job.payload.merchantId))).get();
   if (!m) return;
-  const stats = { merchantId: m.id, slug: m.slug, score: m.score ?? 100, totalCalls: m.totalCalls, failedCalls: m.failedCalls };
+  // Publish the real success rate even before the 5-call threshold: totalCalls travels with it,
+  // so readers can tell a new merchant from an established one. Never publish a made-up 100.
+  const rate = m.totalCalls > 0 ? Math.round((100 * (m.totalCalls - m.failedCalls)) / m.totalCalls) : 0;
+  const stats = { merchantId: m.id, slug: m.slug, score: m.score ?? rate, totalCalls: m.totalCalls, failedCalls: m.failedCalls };
   if (m.arkivEntityKey) {
     await c.updateReputation(m.arkivEntityKey, stats);
   } else {

@@ -59,8 +59,13 @@ async function readArkiv(merchantId: string): Promise<{ ok: boolean; rep: Rep; d
     });
     const { entities } = await read.select({ $key: true, score: true, totalCalls: true, failedCalls: true }).from(Schema)
       .where(eq("merchantId", merchantId)).ownedBy(env.arkivWriter as `0x${string}`).fetch();
-    const rep = (entities[0] as unknown as Rep) ?? null;
-    return { ok: true, rep, detail: rep ? `score ${String(rep.score)} (${String(rep.totalCalls)} calls, ${String(rep.failedCalls)} failed)` : "No reputation entity yet (new merchant)" };
+    // Arkiv returns typed attributes as { type, value }: unwrap them before showing anything.
+    const plain = (v: unknown) => { const x = v && typeof v === "object" && "value" in v ? (v as { value: unknown }).value : v; return typeof x === "bigint" ? Number(x) : x; };
+    const e = entities[0] as Record<string, unknown> | undefined;
+    const rep: Rep = e ? { $key: e.$key as string, score: Number(plain(e.score)), totalCalls: Number(plain(e.totalCalls)), failedCalls: Number(plain(e.failedCalls)) } : null;
+    const detail = !rep ? "No reputation entity yet (new merchant)"
+      : `Score ${rep.score}/100 from ${rep.totalCalls} protected call(s), ${rep.failedCalls} failed${Number(rep.totalCalls) < 5 ? " (new merchant: fewer than 5 calls)" : ""}`;
+    return { ok: true, rep, detail };
   } catch (err) {
     return { ok: false, rep: null, detail: `Arkiv read failed: ${String((err as Error).message ?? err).slice(0, 120)}` };
   }

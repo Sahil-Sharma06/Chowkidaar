@@ -48,6 +48,12 @@ export async function updateReputation(entityKey: string, s: Stats) {
   await arkivWrite.patchEntity(MerchantReputation, entityKey as Hex, { set: toValues(s) });
 }
 
+/** Arkiv returns typed attributes as `{ type, value }`; this turns one into a plain number or string. */
+export const plain = (v: unknown): string | number => {
+  const x = v && typeof v === "object" && "value" in v ? (v as { value: unknown }).value : v;
+  return typeof x === "bigint" ? Number(x) : typeof x === "number" ? x : String(x ?? "");
+};
+
 export async function readReputation(merchantId: string, owner: Hex) {
   const { entities } = await arkivRead
     .select({ $key: true, score: true, totalCalls: true, failedCalls: true, slug: true })
@@ -55,5 +61,10 @@ export async function readReputation(merchantId: string, owner: Hex) {
     .where(eq("merchantId", merchantId))
     .ownedBy(owner) // Ignore entities written by anyone else
     .fetch();
-  return entities[0] ?? null;
+  const e = entities[0];
+  if (!e) return null;
+  return {
+    key: e.$key as string, slug: String(plain(e.slug)),
+    score: Number(plain(e.score)), totalCalls: Number(plain(e.totalCalls)), failedCalls: Number(plain(e.failedCalls)),
+  };
 }
