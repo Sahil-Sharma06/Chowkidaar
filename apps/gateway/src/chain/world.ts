@@ -1,12 +1,14 @@
 import { signRequest } from "@worldcoin/idkit-core/signing";
 import { env } from "../env.ts";
 
-// Never rename these: a new action name produces new nullifiers and lets banned merchants re-register.
-export const ACTIONS = { merchant: "merchant-register-v1", owner: "owner-login-v1" } as const;
-export type Role = keyof typeof ACTIONS;
+/**
+ * IDKit is used for one trust moment: becoming a merchant. Sign-in itself is Agent Pass.
+ * Never rename this action: a new name produces new nullifiers and lets banned merchants re-register.
+ */
+export const MERCHANT_ACTION = "merchant-register-v1";
 
-export function createRpContext(role: Role) {
-  const action = ACTIONS[role];
+export function createRpContext() {
+  const action = MERCHANT_ACTION;
   const { sig, nonce, createdAt, expiresAt } = signRequest({ signingKeyHex: env.worldSigningKey, action });
   // The widget expects snake_case.
   return {
