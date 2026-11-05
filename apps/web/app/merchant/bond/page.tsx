@@ -1,4 +1,5 @@
 "use client";
+import { Suspense } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ApiError, get, type MerchantMe } from "@/lib/api";
@@ -14,7 +15,7 @@ export default function BondPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Bond</h1>
       <Alert tone="amber">Your bond is held in a custodial testnet vault in this version. A smart-contract vault is the next step.</Alert>
-      <BondPanel merchantId={me.data.id} />
+      <Suspense><BondPanel merchantId={me.data.id} /></Suspense>
     </div>
   );
 }

@@ -1,9 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DEPOSIT_ERROR_TEXT, hashscanTx } from "@app/shared";
-import { ApiError, HASHSCAN, get, post, type Bond } from "@/lib/api";
-import { Alert, CopyButton, Money, Stat, TxLink, fmtTime } from "@/lib/ui";
+import { ApiError, HASHSCAN, get, isStepUp, post, startStepUp, takePendingStepUp, type Bond, type MerchantMe } from "@/lib/api";
+import { Alert, CopyButton, Money, Stat, TxLink, fmtTime, microFromInput } from "@/lib/ui";
+import { reasonText } from "@/lib/world";
 
 export function BondPanel({ merchantId }: { merchantId: string }) {
   const qc = useQueryClient();
@@ -40,13 +42,86 @@ export function BondPanel({ merchantId }: { merchantId: string }) {
         {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
       </div>
 
+      <WithdrawCard merchantId={merchantId} bond={b} />
+
       <div className="card overflow-x-auto p-0"><table className="table">
         <thead><tr><th>Time</th><th>Type</th><th>Amount</th><th>Transaction</th></tr></thead>
         <tbody>
           {b.ledger?.map((l) => <tr key={l.id}><td className="text-xs">{fmtTime(l.createdAt)}</td><td className="capitalize">{l.type}</td><td><Money micro={l.amount} /></td><td>{l.txId ? <TxLink href={l.txId.includes("@") ? hashscanTx(l.txId, HASHSCAN) : `${HASHSCAN}/transaction/${l.txId}`} label="HashScan" /> : <span className="text-xs text-slate-400">seeded</span>}</td></tr>)}
-          {b.ledger?.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-slate-500">No deposits yet.</td></tr>}
+          {b.ledger?.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-slate-500">No bond activity yet.</td></tr>}
         </tbody>
       </table></div>
+    </div>
+  );
+}
+
+const WITHDRAW_ERRORS: Record<string, string> = {
+  insufficient_available: "That is more than the available bond. Money held for calls in progress cannot be withdrawn.",
+  transfer_failed: "The Hedera transfer failed, so nothing was withdrawn. Please try again.",
+  suspended: "Suspended merchants cannot withdraw their bond.",
+};
+
+/** Withdraw the unreserved bond. Needs a fresh World ID check, then finishes the withdrawal on return. */
+function WithdrawCard({ merchantId, bond }: { merchantId: string; bond: Bond }) {
+  const qc = useQueryClient();
+  const params = useSearchParams();
+  const merchant = useQuery({ queryKey: ["merchant-me"], queryFn: () => get<MerchantMe>("/api/merchants/me") });
+  const [amount, setAmount] = useState("");
+  const [msg, setMsg] = useState<{ tone: "green" | "red"; text: React.ReactNode } | null>(null);
+  const scope = `merchant:${merchantId}:withdraw`;
+
+  const withdraw = useMutation({
+    mutationFn: (micro: number) => post<{ withdrawn: string; txId: string }>(`/api/merchants/${merchantId}/bond/withdraw`, { amount: micro }),
+    onSuccess: (r) => {
+      setAmount("");
+      setMsg({ tone: "green", text: <>Withdrew <Money micro={r.withdrawn} /> to your payout account. <TxLink href={hashscanTx(r.txId, HASHSCAN)} label="View on HashScan" /></> });
+      qc.invalidateQueries({ queryKey: ["bond", merchantId] }); qc.invalidateQueries({ queryKey: ["merchant-me"] });
+    },
+    onError: (e, micro) => isStepUp(e)
+      ? startStepUp(e.body.scope, "/merchant/bond", { amount: micro })
+      : setMsg({ tone: "red", text: e instanceof ApiError ? WITHDRAW_ERRORS[e.code] ?? "Could not withdraw. Please try again." : "Could not withdraw. Please try again." }),
+  });
+
+  // Back from the World ID check: finish the withdrawal the merchant asked for, once.
+  const stepup = params.get("stepup");
+  useEffect(() => {
+    if (!stepup) return;
+    window.history.replaceState(null, "", "/merchant/bond");
+    if (stepup === "ok" && params.get("scope") === scope) {
+      const p = takePendingStepUp<{ amount: number }>(scope);
+      if (p) withdraw.mutate(p.amount);
+    } else if (stepup === "denied") {
+      setMsg({ tone: "red", text: `${reasonText(params.get("reason"))} Nothing was withdrawn.` });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepup]);
+
+  const available = Number(bond.available);
+  const submit = () => {
+    setMsg(null);
+    try {
+      const micro = microFromInput(amount);
+      if (micro <= 0) throw new Error("Enter an amount above zero.");
+      if (micro > available) throw new Error("That is more than the available bond.");
+      withdraw.mutate(micro);
+    } catch (err) { setMsg({ tone: "red", text: (err as Error).message }); }
+  };
+  const belowMin = (() => { try { return available - microFromInput(amount) < Number(bond.minimum); } catch { return false; } })();
+
+  return (
+    <div className="card space-y-3">
+      <h3 className="font-semibold">Withdraw</h3>
+      <p className="text-sm text-slate-600">
+        Send part of your bond back to your payout account{merchant.data ? <> (<span className="font-mono">{merchant.data.payoutAccountId}</span>)</> : null}.
+        Money held for calls in progress stays in the vault. For your safety you&apos;ll confirm with World ID first.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input className="input max-w-xs" inputMode="decimal" placeholder="Amount in USDC" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        <button className="btn-ghost text-sm" type="button" onClick={() => setAmount((available / 1e6).toString())}>Max (<Money micro={available} />)</button>
+        <button className="btn-secondary" disabled={!amount || withdraw.isPending || available <= 0} onClick={submit}>{withdraw.isPending ? "Withdrawing…" : "Withdraw"}</button>
+      </div>
+      {amount && belowMin && <Alert tone="amber">After this your bond will be below the minimum (<Money micro={bond.minimum} />). Your service will stop taking calls until you deposit again.</Alert>}
+      {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
     </div>
   );
 }

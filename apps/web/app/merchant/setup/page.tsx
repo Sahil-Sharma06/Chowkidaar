@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, get, patch, post, type MerchantMe } from "@/lib/api";
@@ -85,7 +85,7 @@ export default function MerchantSetup() {
       {step === 3 && me.data && (
         <>
           <Alert tone="amber">Your bond is held in a custodial testnet vault in this version.</Alert>
-          <BondPanel merchantId={me.data.id} />
+          <Suspense><BondPanel merchantId={me.data.id} /></Suspense>
         </>
       )}
 
