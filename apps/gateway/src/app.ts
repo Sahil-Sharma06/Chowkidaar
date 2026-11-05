@@ -1,6 +1,7 @@
 import { Hono, type Context, type Next } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { proxy } from "hono/proxy";
 import type { FacilitatorClient } from "@x402/core/server";
 import type { Db } from "./db/index.ts";
 import { env } from "./env.ts";
@@ -70,6 +71,18 @@ export function createApp(deps: AppDeps) {
   app.route("/api", agentRoutes(db));
   app.route("/api", merchantRoutes(db));
   app.route("/api/public", publicRoutes(db));
+
+  // Development only: when the public tunnel (ngrok) points at the gateway instead of the web app,
+  // pass every page request through to Next.js so the site and the session cookie share one origin.
+  if (env.webDevProxy) {
+    const target = env.webDevProxy.replace(/\/$/, "");
+    app.all("*", (c) => {
+      const url = new URL(c.req.url);
+      // Never forward API paths: Next rewrites /api back to the gateway, which would loop.
+      if (/^\/(api|v1)(\/|$)/.test(url.pathname)) return c.json({ error: "not_found" }, 404);
+      return proxy(`${target}${url.pathname}${url.search}`, { raw: c.req.raw });
+    });
+  }
 
   app.onError((err, c) => {
     console.error(err);

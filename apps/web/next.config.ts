@@ -13,8 +13,13 @@ try {
 const GATEWAY_URL = process.env.GATEWAY_URL ?? "http://localhost:4000";
 const DEMO_AGENT_URL = process.env.DEMO_AGENT_URL ?? "http://localhost:4200";
 
+// When the app is served through a tunnel (ngrok) for World ID callbacks, the dev server
+// must accept requests from that host too.
+const webHost = (() => { try { return new URL(process.env.WEB_ORIGIN ?? "").hostname; } catch { return ""; } })();
+
 const config: NextConfig = {
   transpilePackages: ["@app/shared"],
+  allowedDevOrigins: webHost && webHost !== "localhost" ? [webHost] : [],
   env: {
     NEXT_PUBLIC_HASHSCAN_URL: process.env.NEXT_PUBLIC_HASHSCAN_URL ?? "https://hashscan.io/testnet",
     NEXT_PUBLIC_WORLD_APP_ID: process.env.NEXT_PUBLIC_WORLD_APP_ID ?? process.env.WORLD_APP_ID ?? "",

@@ -40,6 +40,8 @@ export const env = {
   port: Number(opt("GATEWAY_PORT", "4000")),
   publicUrl: opt("GATEWAY_URL", "http://localhost:4000"),
   webOrigin: opt("WEB_ORIGIN", "http://localhost:3000"),
+  // Dev only: forward non-API requests to the Next.js dev server (tunnel pointed at the gateway).
+  webDevProxy: opt("WEB_DEV_PROXY"),
   hashscan: opt("NEXT_PUBLIC_HASHSCAN_URL", "https://hashscan.io/testnet"),
 };
 
