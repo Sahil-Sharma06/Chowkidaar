@@ -51,8 +51,9 @@ const APPROVAL_THRESHOLD = parseUsdc(e.DEMO_APPROVAL_USDC || "0.25");
 // Demo owner + agent --------------------------------------------------------------------
 let owner = db.select().from(accounts).where(eq(accounts.worldNullifier, "seed:demo-owner")).get();
 if (!owner) {
-  owner = { id: newId("acct"), role: "owner", worldAction: "seed", worldNullifier: "seed:demo-owner", createdAt: Date.now() };
-  db.insert(accounts).values(owner).run();
+  // Sandbox-only owner: it can never sign in (no World ID identity), it only owns the demo agent.
+  db.insert(accounts).values({ id: newId("acct"), isOwner: true, displayName: "Sandbox owner", worldAction: "seed", worldNullifier: "seed:demo-owner" }).run();
+  owner = db.select().from(accounts).where(eq(accounts.worldNullifier, "seed:demo-owner")).get()!;
 }
 let agent = db.select().from(agents).where(eq(agents.hederaAccountId, agentAccount)).get();
 let apiKey: string | null = null;

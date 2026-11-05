@@ -8,7 +8,7 @@ export const MERCHANT_PAYOUT = "0.0.8888888";
 
 export function freshDb(): Db {
   const { db } = openDb(":memory:");
-  db.insert(schema.accounts).values({ id: "acct_owner", role: "owner", worldAction: "t", worldNullifier: "owner" }).run();
+  db.insert(schema.accounts).values({ id: "acct_owner", isOwner: true, worldAction: "t", worldNullifier: "owner" }).run();
   db.insert(schema.agents).values({
     id: "agt_1", ownerId: "acct_owner", name: "Test agent", hederaAccountId: AGENT_ACCOUNT, apiKeyHash: sha256(API_KEY),
     perCallCap: 500_000, dailyCap: 5_000_000, approvalThreshold: 250_000, minScore: 80, allowlistOnly: true, status: "active",
