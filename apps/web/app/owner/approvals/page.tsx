@@ -3,8 +3,9 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShieldCheck } from "lucide-react";
-import { get, post, type ApprovalRow } from "@/lib/api";
+import { ApiError, get, post, type ApprovalRow } from "@/lib/api";
 import { Alert, Badge, Empty, Money } from "@/lib/ui";
+import { reasonText } from "@/lib/world";
 
 export default function ApprovalsPage() {
   return <Suspense><Approvals /></Suspense>;
@@ -23,7 +24,8 @@ function Approvals() {
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Pending approvals</h1>
       {world === "approved" && <Alert tone="green">Approved with a fresh World ID verification. The agent can retry this call for the next 15 minutes.</Alert>}
-      {world === "denied" && <Alert tone="red">World ID verification did not complete ({params.get("reason")}). The payment stays blocked.</Alert>}
+      {world === "denied" && <Alert tone="red">{reasonText(params.get("reason"))} The payment was not approved and stays blocked.</Alert>}
+      {decide.isError && <Alert tone="red">{decide.error instanceof ApiError && decide.error.code === "expired" ? "That request expired before you decided." : "Could not save your decision. Please try again."}</Alert>}
       <Alert tone="blue">Nothing has been paid yet. After you decide, the agent can retry this call for the next 15 minutes.{agentPass && " Approving requires a fresh World ID verification (Agent Pass step-up)."}</Alert>
       {q.data?.length === 0 ? <Empty title="No pending approvals" /> : (
         <div className="card overflow-x-auto p-0"><table className="table">

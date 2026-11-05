@@ -11,17 +11,19 @@ export function Nav() {
   const router = useRouter();
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ["me"], queryFn: () => get<Me>("/api/me"), retry: false });
+  const roles = me.data?.roles;
   const approvals = useQuery({
     queryKey: ["approvals", "pending"],
     queryFn: () => get<ApprovalRow[]>("/api/approvals?status=pending"),
-    enabled: me.data?.role === "owner", refetchInterval: 3000,
+    enabled: roles?.owner === true, refetchInterval: 5000,
   });
 
   const links = [
-    { href: "/demo", label: "Live demo" },
+    { href: "/demo", label: "Sandbox" },
     { href: "/merchants", label: "Merchants" },
-    ...(me.data?.role === "owner" ? [{ href: "/owner", label: "Owner" }, { href: "/owner/approvals", label: "Approvals", badge: approvals.data?.length ?? 0 }] : []),
-    ...(me.data?.role === "merchant" ? [{ href: "/merchant", label: "Merchant" }, { href: "/merchant/bond", label: "Bond" }] : []),
+    ...(roles?.owner ? [{ href: "/owner", label: "My agents" }, { href: "/owner/approvals", label: "Approvals", badge: approvals.data?.length ?? 0 }] : []),
+    ...(roles?.merchant ? [{ href: "/merchant", label: "My service" }, { href: "/merchant/bond", label: "Bond" }] : []),
+    ...(me.data && !(roles?.owner && roles?.merchant) ? [{ href: "/onboarding", label: roles?.owner || roles?.merchant ? "Add role" : "Get set up" }] : []),
   ];
 
   return (
@@ -37,9 +39,12 @@ export function Nav() {
           ))}
         </nav>
         {me.data ? (
-          <button className="text-sm text-slate-300 hover:text-white" onClick={async () => { await post("/api/logout"); qc.clear(); router.push("/"); }}>Log out</button>
+          <div className="flex items-center gap-3 text-sm">
+            <span className="hidden text-slate-300 sm:inline">{me.data.displayName ?? (me.data.identity === "world-id" ? "Verified human" : "Dev user")}</span>
+            <button className="text-slate-300 hover:text-white" onClick={async () => { try { await post("/api/logout"); } finally { qc.clear(); router.push("/"); } }}>Log out</button>
+          </div>
         ) : (
-          <Link href="/login" className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium hover:bg-blue-500">Get started</Link>
+          <Link href="/login" className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium hover:bg-blue-500">Sign in</Link>
         )}
       </div>
     </header>

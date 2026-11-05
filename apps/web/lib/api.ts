@@ -29,7 +29,39 @@ export const HASHSCAN = process.env.NEXT_PUBLIC_HASHSCAN_URL ?? "https://hashsca
 export const USDC_ID = process.env.NEXT_PUBLIC_USDC_TOKEN_ID ?? "0.0.429274";
 export const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL ?? "http://localhost:4000";
 
-export type Me = { id: string; role: "owner" | "merchant"; merchant: { id: string; slug: string; status: string } | null };
+export type Role = "owner" | "merchant";
+export type Me = {
+  id: string; displayName: string | null; identity: "world-id" | "dev";
+  roles: Record<Role, boolean>; merchantVerified: boolean;
+  merchant: { id: string; slug: string; name: string; status: string } | null;
+  agentCount: number; createdAt: number; lastLoginAt: number | null;
+};
+export type AuthConfig = { agentPass: boolean; idkit: boolean; appId: string | null; environment: string; devLogin: boolean };
+
+export const loginUrl = (next?: string) => `/api/world/oidc/start?purpose=login${next ? `&next=${encodeURIComponent(next)}` : ""}`;
+
+/**
+ * Step-up: a sensitive action answered 403 step_up_required. Remember what we were doing,
+ * send the person through a fresh World ID check, and come back to `next` to finish it.
+ */
+const PENDING_KEY = "pending-step-up";
+export function startStepUp(scope: string, next: string, pending: unknown) {
+  try { sessionStorage.setItem(PENDING_KEY, JSON.stringify({ scope, pending, at: Date.now() })); } catch { /* storage blocked: the user re-submits */ }
+  window.location.href = `/api/world/oidc/start?purpose=stepup&scope=${encodeURIComponent(scope)}&next=${encodeURIComponent(next)}`;
+}
+/** Returns the remembered action for `scope` once (and forgets it), if it is recent. */
+export function takePendingStepUp<T>(scope: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as { scope: string; pending: T; at: number };
+    if (p.scope !== scope) return null;
+    sessionStorage.removeItem(PENDING_KEY);
+    return Date.now() - p.at < 10 * 60 * 1000 ? p.pending : null;
+  } catch { return null; }
+}
+export const isStepUp = (e: unknown): e is ApiError & { body: { scope: string } } =>
+  e instanceof ApiError && e.code === "step_up_required" && typeof (e.body as { scope?: unknown })?.scope === "string";
 export type Config = {
   network: string; usdc: string; gatewayAccount: string; vaultAccount: string; hcsTopicId: string | null; hashscan: string; facilitator: string;
   features: { world: boolean; arkiv: boolean; hcs: boolean; demoMode: boolean }; feeBps: number; penaltyBps: number;
