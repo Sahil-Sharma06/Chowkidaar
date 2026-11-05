@@ -35,6 +35,26 @@ export function publicRoutes(db: Db) {
     return c.json(rows.map(toPublicMerchant));
   });
 
+  /**
+   * Merchant reputation read live from Arkiv (not from our database), so anyone can check
+   * that what we show matches the public record. Cached briefly to keep the page fast.
+   */
+  let repCache: { at: number; body: unknown } | null = null;
+  app.get("/reputation", async (c) => {
+    if (!hasArkiv() || !env.arkivWriterAddress) return c.json({ source: "arkiv", enabled: false, writer: null, entities: [] });
+    if (repCache && Date.now() - repCache.at < 30_000) return c.json(repCache.body);
+    try {
+      const { listReputations } = await import("../chain/arkiv.ts");
+      const entities = await listReputations(env.arkivWriterAddress as `0x${string}`);
+      const body = { source: "arkiv", enabled: true, writer: env.arkivWriterAddress, fetchedAt: Date.now(), entities };
+      repCache = { at: Date.now(), body };
+      return c.json(body);
+    } catch (err) {
+      console.warn("[arkiv] reputation read failed:", err);
+      return c.json({ source: "arkiv", enabled: true, writer: env.arkivWriterAddress, error: "arkiv_unavailable", entities: [] }, 503);
+    }
+  });
+
   app.get("/receipts/:id", (c) => {
     const r = buildReceipt(db, c.req.param("id"));
     return r ? c.json(r) : c.json({ error: "not_found" }, 404);

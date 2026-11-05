@@ -48,6 +48,29 @@ export async function updateReputation(entityKey: string, s: Stats) {
   await arkivWrite.patchEntity(MerchantReputation, entityKey as Hex, { set: toValues(s) });
 }
 
+export type ArkivReputation = { key: string; merchantId: string; slug: string; score: number; totalCalls: number; failedCalls: number; updatedAt: number };
+
+/** Every reputation entity our writer published, in one query (what the public merchants page shows). */
+export async function listReputations(owner: Hex): Promise<ArkivReputation[]> {
+  const { entities } = await arkivRead
+    .select({ $key: true, merchantId: true, slug: true, score: true, totalCalls: true, failedCalls: true, updatedAt: true })
+    .from(MerchantReputation)
+    .ownedBy(owner) // Only our gateway's records count; anyone else can write look-alike entities
+    .fetch();
+  // Keep the newest record per merchant: an older entity can outlive a reset of our database.
+  const latest = new Map<string, ArkivReputation>();
+  for (const e of entities) {
+    const r: ArkivReputation = {
+      key: e.$key as string, merchantId: String(plain(e.merchantId)), slug: String(plain(e.slug)),
+      score: Number(plain(e.score)), totalCalls: Number(plain(e.totalCalls)), failedCalls: Number(plain(e.failedCalls)),
+      updatedAt: Number(plain(e.updatedAt)),
+    };
+    const prev = latest.get(r.merchantId);
+    if (!prev || r.updatedAt > prev.updatedAt) latest.set(r.merchantId, r);
+  }
+  return [...latest.values()];
+}
+
 /** Arkiv returns typed attributes as `{ type, value }`; this turns one into a plain number or string. */
 export const plain = (v: unknown): string | number => {
   const x = v && typeof v === "object" && "value" in v ? (v as { value: unknown }).value : v;

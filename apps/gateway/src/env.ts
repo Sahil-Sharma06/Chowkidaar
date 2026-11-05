@@ -26,6 +26,8 @@ export const env = {
 
   arkivAccessKey: opt("ARKIV_ACCESS_KEY"),
   arkivPrivateKey: opt("ARKIV_PRIVATE_KEY"),
+  // Public address whose entities we trust; must match ARKIV_PRIVATE_KEY's account.
+  arkivWriterAddress: opt("ARKIV_WRITER_ADDRESS"),
 
   worldAppId: opt("WORLD_APP_ID"),
   worldRpId: opt("WORLD_RP_ID"),
