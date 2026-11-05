@@ -1,0 +1,40 @@
+{
+  "name": "@app/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../../.env --watch --import tsx src/index.ts",
+    "start": "node --env-file=../../.env --import tsx src/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@app/shared": "*",
+    "hono": "4.13.16",
+    "@hono/node-server": "2.1.6",
+    "@hono/zod-validator": "0.9.1",
+    "zod": "4.6.7",
+    "@x402/core": "2.30.0",
+    "@x402/hono": "2.30.0",
+    "@x402/hedera": "2.30.0",
+    "@x402/fetch": "2.30.0",
+    "@hiero-ledger/sdk": "2.90.1",
+    "@arkiv-network/sdk": "1.0.1",
+    "viem": "2.57.16",
+    "@worldcoin/idkit-core": "4.6.0",
+    "drizzle-orm": "0.45.4",
+    "better-sqlite3": "13.0.3",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "tsx": "4.23.15",
+    "drizzle-kit": "0.31.11",
+    "vitest": "5.1.0",
+    "@types/node": "24.19.2",
+    "@types/better-sqlite3": "9.6.0"
+  }
+}
