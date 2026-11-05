@@ -1,0 +1,1 @@
+{ "extends": "../tsconfig.base.json", "include": ["*.ts", "../apps/gateway/src/db/**/*.ts"] }
