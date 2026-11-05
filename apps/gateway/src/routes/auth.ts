@@ -18,7 +18,12 @@ const STEP_UP_SCOPE = /^agent:[A-Za-z0-9_-]{1,64}:(limits|key)$/;
 
 type Vars = { Variables: { session: Session } };
 
-const devLoginEnabled = () => env.demoMode && !hasAgentPass();
+/**
+ * Dev login: automatic when Agent Pass is not configured. DEV_LOGIN=true also allows it next to
+ * Agent Pass for local testing, but never in a production build.
+ */
+export const devLoginEnabled = () =>
+  env.demoMode && process.env.NODE_ENV !== "production" && (!hasAgentPass() || process.env.DEV_LOGIN === "true");
 
 export function authRoutes(db: Db) {
   const app = new Hono<Vars>();

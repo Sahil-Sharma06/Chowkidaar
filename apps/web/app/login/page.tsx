@@ -49,26 +49,30 @@ function Login() {
       {denied && <Alert tone="red">{reasonText(params.get("reason"))} Nothing was changed. You can try again.</Alert>}
 
       <div className="card space-y-4">
-        {cfg.isLoading ? <div className="text-sm text-slate-500">Loading…</div>
-          : cfg.data?.agentPass ? (
-            <>
-              <a className="btn-primary w-full" href={loginUrl(next)}><ShieldCheck className="h-4 w-4" /> Continue with World ID</a>
-              <ul className="space-y-1 text-xs text-slate-600">
-                <li>• No password and no email. We never see your name or documents.</li>
-                <li>• World ID only tells us you are a unique human, so nobody can run many fake accounts.</li>
-                <li>• Before risky actions, like approving a large payment, we ask you to verify again.</li>
-              </ul>
-              {cfg.data.environment === "staging" && <p className="text-xs text-slate-500">Test environment: World ID uses simulated identities here.</p>}
-            </>
-          ) : cfg.data?.devLogin ? (
-            <>
-              <Alert tone="blue">World ID is not configured on this server, so a local development login is used instead.</Alert>
-              <label className="block"><span className="label">Display name</span>
-                <input className="input" value={name} placeholder="demo" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && devLogin()} />
-              </label>
-              <button className="btn-primary w-full" onClick={devLogin}>Continue</button>
-            </>
-          ) : <Alert tone="red">Sign-in is not available right now. Please try again later.</Alert>}
+        {cfg.isLoading && <div className="text-sm text-slate-500">Loading…</div>}
+        {cfg.data?.agentPass && (
+          <>
+            <a className="btn-primary w-full" href={loginUrl(next)}><ShieldCheck className="h-4 w-4" /> Continue with World ID</a>
+            <ul className="space-y-1 text-xs text-slate-600">
+              <li>• No password and no email. We never see your name or documents.</li>
+              <li>• World ID only tells us you are a unique human, so nobody can run many fake accounts.</li>
+              <li>• Before risky actions, like approving a large payment, we ask you to verify again.</li>
+            </ul>
+            {cfg.data.environment === "staging" && <p className="text-xs text-slate-500">Test environment: World ID uses simulated identities here.</p>}
+          </>
+        )}
+        {cfg.data?.devLogin && (
+          <div className={cfg.data.agentPass ? "space-y-3 border-t border-slate-200 pt-4" : "space-y-3"}>
+            <Alert tone="blue">{cfg.data.agentPass
+              ? "Local development login is switched on (DEV_LOGIN). It is never available in production."
+              : "World ID is not configured on this server, so a local development login is used instead."}</Alert>
+            <label className="block"><span className="label">Display name</span>
+              <input className="input" value={name} placeholder="demo" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && devLogin()} />
+            </label>
+            <button className={cfg.data.agentPass ? "btn-secondary w-full" : "btn-primary w-full"} onClick={devLogin}>Continue with dev login</button>
+          </div>
+        )}
+        {cfg.data && !cfg.data.agentPass && !cfg.data.devLogin && <Alert tone="red">Sign-in is not available right now. Please try again later.</Alert>}
         {error && <Alert tone="red">{error}</Alert>}
       </div>
     </div>

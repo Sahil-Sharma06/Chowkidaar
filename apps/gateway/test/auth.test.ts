@@ -82,6 +82,19 @@ describe("accounts and sessions", () => {
     expect((await app.request("/api/me", { headers: { cookie: "app_session=forged" } })).status).toBe(401);
   });
 
+  it("DEV_LOGIN=true re-enables dev login next to Agent Pass, but not in production", async () => {
+    const { app } = build();
+    withAgentPass();
+    const req = () => app.request("/api/dev-login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "x" }) });
+    process.env.DEV_LOGIN = "true";
+    try {
+      expect((await req()).status).toBe(200);
+      const prev = process.env.NODE_ENV;
+      process.env.NODE_ENV = "production";
+      try { expect((await req()).status).toBe(403); } finally { process.env.NODE_ENV = prev; }
+    } finally { delete process.env.DEV_LOGIN; }
+  });
+
   it("dev login is disabled once Agent Pass is configured", async () => {
     const { app } = build();
     withAgentPass();
