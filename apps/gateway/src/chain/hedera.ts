@@ -47,6 +47,19 @@ export async function refundFromGateway(opts: { paymentId: string; agent: string
   return { txId: response.transactionId.toString(), status: receipt.status.toString() };
 }
 
+/** Bond withdrawal: vault -> the merchant's payout account. The gateway pays the network fee. */
+export async function withdrawFromBond(opts: { merchantId: string; to: string; amount: number }) {
+  const tx = new TransferTransaction()
+    .addTokenTransfer(USDC, env.vaultId, -opts.amount)
+    .addTokenTransfer(USDC, opts.to, opts.amount)
+    .setTransactionMemo(`withdraw:${opts.merchantId}`)
+    .freezeWith(client);
+  await tx.sign(vaultKey);
+  const response = await tx.execute(client);
+  const receipt = await response.getReceipt(client);
+  return { txId: response.transactionId.toString(), status: receipt.status.toString() };
+}
+
 export async function publishReceipt(message: object): Promise<number> {
   const tx = await new TopicMessageSubmitTransaction()
     .setTopicId(env.hcsTopicId)

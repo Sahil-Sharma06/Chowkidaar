@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { desc, eq } from "drizzle-orm";
-import { createMerchantSchema, depositSchema, patchMerchantSchema } from "@app/shared";
+import { createMerchantSchema, depositSchema, patchMerchantSchema, withdrawSchema } from "@app/shared";
 import type { Db } from "../db/index.ts";
 import { schema } from "../db/index.ts";
 import { env } from "../env.ts";
 import { newId } from "../ids.ts";
-import { requireRole, type Session } from "../auth.ts";
+import { consumeStepUp, requireRole, stepUpRequired, type Session } from "../auth.ts";
 import { compileSchema } from "../checks.ts";
 import { lockFor, minBondFor, totalFor } from "../money.ts";
 import { assertSafeUrl } from "../ssrf.ts";
@@ -28,7 +28,10 @@ export function bondView(m: typeof merchants.$inferSelect) {
   };
 }
 
-export function merchantRoutes(db: Db) {
+export type BondWithdraw = (o: { merchantId: string; to: string; amount: number }) => Promise<{ txId: string }>;
+const liveWithdraw: BondWithdraw = async (o) => (await import("../chain/hedera.ts")).withdrawFromBond(o);
+
+export function merchantRoutes(db: Db, withdraw: BondWithdraw = liveWithdraw) {
   const app = new Hono<Vars>();
   for (const p of ["/merchants", "/merchants/*"]) app.use(p, requireRole(db, "merchant"));
 
@@ -139,6 +142,55 @@ export function merchantRoutes(db: Db) {
     }
     const fresh = db.select().from(merchants).where(eq(merchants.id, m.id)).get()!;
     return c.json({ credited: String(dep.amount), ...bondView(fresh), merchant: full(fresh) });
+  });
+
+  /**
+   * Withdraw the unreserved part of the bond to the merchant's payout account.
+   * Needs a fresh World ID step-up. The amount is reserved in the database before the transfer,
+   * so two concurrent withdrawals can never both spend it; a failed transfer releases it again.
+   */
+  app.post("/merchants/:id/bond/withdraw", zValidator("json", withdrawSchema), async (c) => {
+    const m = mine(c);
+    if (!m || m.id !== c.req.param("id")) return c.json({ error: "not_found" }, 404);
+    if (m.status === "suspended") return c.json({ error: "suspended" }, 403);
+    const { amount } = c.req.valid("json");
+    if (amount > m.bondBalance - m.bondLocked) return c.json({ error: "insufficient_available", available: String(m.bondBalance - m.bondLocked) }, 400);
+    const scope = `merchant:${m.id}:withdraw`;
+    if (!consumeStepUp(db, c.get("session"), scope)) return stepUpRequired(c, scope);
+
+    const ledgerId = newId("led");
+    const reserved = db.transaction((tx) => {
+      const cur = tx.select().from(merchants).where(eq(merchants.id, m.id)).get()!;
+      if (amount > cur.bondBalance - cur.bondLocked) return false;
+      tx.update(merchants).set({ bondBalance: cur.bondBalance - amount }).where(eq(merchants.id, m.id)).run();
+      tx.insert(bondLedger).values({ id: ledgerId, merchantId: m.id, type: "withdraw", amount }).run();
+      return true;
+    });
+    if (!reserved) return c.json({ error: "insufficient_available" }, 400);
+
+    let txId: string;
+    try {
+      txId = (await withdraw({ merchantId: m.id, to: m.payoutAccountId, amount })).txId;
+    } catch (err) {
+      db.transaction((tx) => {
+        const cur = tx.select().from(merchants).where(eq(merchants.id, m.id)).get()!;
+        tx.update(merchants).set({ bondBalance: cur.bondBalance + amount }).where(eq(merchants.id, m.id)).run();
+        tx.delete(bondLedger).where(eq(bondLedger.id, ledgerId)).run();
+      });
+      console.error("[withdraw] transfer failed:", err);
+      return c.json({ error: "transfer_failed", detail: env.demoMode ? String((err as Error).message ?? err) : undefined }, 502);
+    }
+
+    db.transaction((tx) => {
+      tx.update(bondLedger).set({ txId }).where(eq(bondLedger.id, ledgerId)).run();
+      const cur = tx.select().from(merchants).where(eq(merchants.id, m.id)).get()!;
+      // A live merchant whose bond falls below the minimum stops taking calls until it tops up.
+      if (cur.status === "live" && cur.bondBalance - cur.bondLocked < minBondFor(cur.price)) {
+        tx.update(merchants).set({ status: "needs_bond" }).where(eq(merchants.id, m.id)).run();
+      }
+    });
+    const fresh = db.select().from(merchants).where(eq(merchants.id, m.id)).get()!;
+    return c.json({ withdrawn: String(amount), txId, ...bondView(fresh), merchant: full(fresh) });
   });
 
   app.get("/merchants/:id/payments", (c) => {

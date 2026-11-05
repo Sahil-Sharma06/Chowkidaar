@@ -14,7 +14,7 @@ export const AGENT_PASS_ACTION = "agent-pass-oidc";
 export const DEV_ACTION = "dev";
 
 /** Scopes a step-up can authorize. Each maps to exactly one kind of sensitive action. */
-const STEP_UP_SCOPE = /^agent:[A-Za-z0-9_-]{1,64}:(limits|key)$/;
+const STEP_UP_SCOPE = /^(agent:[A-Za-z0-9_-]{1,64}:(limits|key)|merchant:[A-Za-z0-9_-]{1,64}:withdraw)$/;
 
 type Vars = { Variables: { session: Session } };
 

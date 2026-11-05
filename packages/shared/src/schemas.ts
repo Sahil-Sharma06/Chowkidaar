@@ -51,6 +51,8 @@ export const patchMerchantSchema = z.object({
 });
 
 export const depositSchema = z.object({ txId: z.string().min(5) });
+/** Micro-USDC (6 decimals), so 1 USDC = 1_000_000. */
+export const withdrawSchema = z.object({ amount: z.number().int().positive() });
 
 /** IDKit proof of human, submitted by a signed-in account that wants to become a merchant. */
 export const worldVerifySchema = z.object({

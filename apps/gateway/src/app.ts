@@ -11,12 +11,14 @@ import { makeCallHandler, type PipelineDeps } from "./pipeline.ts";
 import { publicRoutes } from "./routes/public.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { agentRoutes } from "./routes/agents.ts";
-import { merchantRoutes } from "./routes/merchants.ts";
+import { merchantRoutes, type BondWithdraw } from "./routes/merchants.ts";
 import { v1Routes } from "./routes/v1.ts";
 
 export interface AppDeps extends PipelineDeps {
   facilitator: FacilitatorClient;
   syncFacilitatorOnStart?: boolean;
+  /** Bond withdrawal transfer; defaults to the live Hedera transfer. Tests inject a fake. */
+  bondWithdraw?: BondWithdraw;
   quiet?: boolean;
 }
 
@@ -69,7 +71,7 @@ export function createApp(deps: AppDeps) {
   // --- Management + public API -------------------------------------------------------
   app.route("/api", authRoutes(db));
   app.route("/api", agentRoutes(db));
-  app.route("/api", merchantRoutes(db));
+  app.route("/api", merchantRoutes(db, deps.bondWithdraw));
   app.route("/api/public", publicRoutes(db));
 
   // Development only: when the public tunnel (ngrok) points at the gateway instead of the web app,
