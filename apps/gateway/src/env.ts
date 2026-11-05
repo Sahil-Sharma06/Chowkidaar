@@ -1,3 +1,10 @@
+import { dirname, isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Relative paths in .env are relative to the repo root, whatever the process cwd is.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const fromRoot = (p: string) => (isAbsolute(p) || p === ":memory:" ? p : resolve(REPO_ROOT, p));
+
 function req(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env ${name}. Copy .env.example to .env and fill it in.`);
@@ -26,7 +33,7 @@ export const env = {
   worldEnv: opt("WORLD_ENVIRONMENT", "staging") as "staging" | "production",
 
   jwtSecret: opt("JWT_SECRET", "dev-secret-change-me"),
-  dbPath: opt("DATABASE_PATH", "./data/app.db"),
+  dbPath: fromRoot(opt("DATABASE_PATH", "./data/app.db")),
   feeBps: Number(opt("FEE_BPS", "200")),
   penaltyBps: Number(opt("PENALTY_BPS", "2000")),
   demoMode: opt("DEMO_MODE", "true") === "true",

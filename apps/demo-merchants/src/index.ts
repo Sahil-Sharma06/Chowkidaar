@@ -44,6 +44,7 @@ app.use(paymentMiddleware({
   "POST /m/honest-error":   { accepts: option(),          description: "Default flow: fails without settling" },
   "POST /m/wrong-value":    { accepts: option("upfront"), description: "Valid JSON, nonsense value" },
   "POST /m/premium-data":   { accepts: option("upfront", "600000"), description: "Same data at 0.60 USDC (over-limit demo)" },
+  "POST /m/big-ticket":     { accepts: option("upfront", "300000"), description: "Same data at 0.30 USDC (owner-approval demo)" },
 }, resourceServer));
 
 /** Live HBAR price from CoinGecko. Falls back to the mirror node exchange rate if CoinGecko is down. */
@@ -64,6 +65,7 @@ async function hbarPrice(): Promise<{ symbol: string; price: number; source: str
 
 app.post("/m/good-data", async (c) => c.json(await hbarPrice()));
 app.post("/m/premium-data", async (c) => c.json({ ...(await hbarPrice()), tier: "premium" }));
+app.post("/m/big-ticket", async (c) => c.json({ ...(await hbarPrice()), tier: "big-ticket" }));
 app.post("/m/server-error", (c) => c.json({ error: "boom" }, 500));
 app.post("/m/empty-response", (c) => c.body(null, 200));
 app.post("/m/broken-format", (c) => c.html("<html><body><h1>Oops</h1></body></html>"));

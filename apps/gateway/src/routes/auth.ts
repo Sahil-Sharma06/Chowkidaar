@@ -9,14 +9,71 @@ import { env, hasWorld } from "../env.ts";
 import { newId } from "../ids.ts";
 import { clearSession, readSession, setSession } from "../auth.ts";
 
-const { accounts, merchants } = schema;
+const { accounts, merchants, approvals, agents } = schema;
+export const AGENT_PASS_ACTION = "agent-pass-oidc";
 
 export function authRoutes(db: Db) {
   const app = new Hono();
 
-  app.get("/auth/config", (c) => c.json({
-    world: hasWorld(), appId: env.worldAppId || null, environment: env.worldEnv, devLogin: env.demoMode && !hasWorld(),
-  }));
+  app.get("/auth/config", async (c) => {
+    const { hasAgentPass } = await import("../chain/agentpass.ts");
+    return c.json({
+      world: hasWorld(), appId: env.worldAppId || null, environment: env.worldEnv, devLogin: env.demoMode && !hasWorld(),
+      agentPass: hasAgentPass(),
+    });
+  });
+
+  // --- World ID Agent Pass (OIDC) ----------------------------------------------------
+  app.get("/world/oidc/start", async (c) => {
+    const { hasAgentPass, startAuth } = await import("../chain/agentpass.ts");
+    if (!hasAgentPass()) return c.json({ error: "agent_pass_not_configured" }, 503);
+    const purpose = c.req.query("purpose") === "approval" ? "approval" : "login";
+    if (purpose === "login") return c.redirect(await startAuth({ purpose }));
+    // Approval: only the owner of the agent may approve, and only a pending, unexpired approval.
+    const s = await readSession(c);
+    if (!s || s.role !== "owner") return c.json({ error: "unauthorized" }, 401);
+    const approvalId = c.req.query("approvalId") ?? "";
+    const a = db.select({ approval: approvals, ownerId: agents.ownerId }).from(approvals)
+      .innerJoin(agents, eq(agents.id, approvals.agentId)).where(eq(approvals.id, approvalId)).get();
+    if (!a || a.ownerId !== s.sub) return c.json({ error: "not_found" }, 404);
+    if (a.approval.status !== "pending" || a.approval.expiresAt < Date.now()) return c.json({ error: "not_pending" }, 409);
+    return c.redirect(await startAuth({ purpose: "approval", approvalId, ownerId: s.sub }));
+  });
+
+  app.get("/world/oidc/callback", async (c) => {
+    const { finishAuth, webRedirect } = await import("../chain/agentpass.ts");
+    const q = c.req.query();
+    let r: Awaited<ReturnType<typeof finishAuth>>;
+    try {
+      r = await finishAuth(q);
+    } catch (err) {
+      // Denied, cancelled, expired or invalid: the protected action does not happen.
+      const e = err as Error & { purpose?: string; approvalId?: string; detail?: string };
+      console.warn("[agent-pass] failed:", e.message, e.detail ?? "");
+      const path = e.purpose === "approval" ? "/owner/approvals" : "/login";
+      return c.redirect(webRedirect(path, { world: "denied", reason: e.message }));
+    }
+    const nullifier = `${r.iss}|${r.sub}`;
+    if (r.purpose === "login") {
+      return login(c, db, "owner", AGENT_PASS_ACTION, nullifier, "/owner");
+    }
+    // Approval: the verified human must be the owner who started it (or link on first use).
+    const acct = db.select().from(accounts).where(eq(accounts.id, r.ownerId ?? "")).get();
+    if (!acct) return c.redirect(webRedirect("/owner/approvals", { world: "denied", reason: "owner_missing" }));
+    const linked = db.select().from(accounts).where(and(eq(accounts.worldNullifier, nullifier), eq(accounts.worldAction, AGENT_PASS_ACTION))).get();
+    if (linked && linked.id !== acct.id) return c.redirect(webRedirect("/owner/approvals", { world: "denied", reason: "identity_mismatch" }));
+    if (!linked && acct.worldAction !== AGENT_PASS_ACTION) {
+      // Dev-login / IDKit owner approving for the first time: bind this World ID to the account.
+      db.update(accounts).set({ worldAction: AGENT_PASS_ACTION, worldNullifier: nullifier }).where(eq(accounts.id, acct.id)).run();
+    } else if (!linked) {
+      return c.redirect(webRedirect("/owner/approvals", { world: "denied", reason: "identity_mismatch" }));
+    }
+    const a = db.select().from(approvals).where(eq(approvals.id, r.approvalId ?? "")).get();
+    if (!a || a.status !== "pending" || a.expiresAt < Date.now()) return c.redirect(webRedirect("/owner/approvals", { world: "denied", reason: "approval_expired" }));
+    db.update(approvals).set({ status: "approved" }).where(eq(approvals.id, a.id)).run();
+    console.log(`[agent-pass] approval ${a.id} granted by ${r.sub.slice(0, 8)}… acr=${r.acr} amr=${r.amr.join(",")} auth_time=${r.authTime}`);
+    return c.redirect(webRedirect("/owner/approvals", { world: "approved", approvalId: a.id }));
+  });
 
   app.get("/world/rp-context", async (c) => {
     if (!hasWorld()) return c.json({ error: "world_not_configured" }, 503);
@@ -64,7 +121,7 @@ export function authRoutes(db: Db) {
   return app;
 }
 
-async function login(c: Parameters<typeof setSession>[0], db: Db, role: "owner" | "merchant", action: string, nullifier: string) {
+async function login(c: Parameters<typeof setSession>[0], db: Db, role: "owner" | "merchant", action: string, nullifier: string, redirectTo?: string) {
   let acct = db.select().from(accounts).where(and(eq(accounts.worldNullifier, nullifier), eq(accounts.worldAction, action))).get();
   if (acct) {
     if (role === "merchant") {
@@ -76,5 +133,6 @@ async function login(c: Parameters<typeof setSession>[0], db: Db, role: "owner" 
     db.insert(accounts).values(acct).run();
   }
   await setSession(c, { sub: acct.id, role: acct.role });
+  if (redirectTo) return c.redirect(`${env.webOrigin}${redirectTo}`);
   return c.json({ id: acct.id, role: acct.role, isNew: acct.createdAt > Date.now() - 2000 });
 }

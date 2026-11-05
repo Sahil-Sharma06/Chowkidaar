@@ -29,10 +29,15 @@ export default function DemoPage() {
   });
 
   const mutation = useMutation({
-    mutationFn: (s: string) => post<DemoRunResult>("/demo-agent/run", { scenario: s }),
+    // If the last run of this scenario was held for approval, retry with that approval id.
+    mutationFn: (s: string) => post<DemoRunResult>("/demo-agent/run", {
+      scenario: s,
+      approvalId: run?.scenario === s ? (run.gatewayResponse as { approvalId?: string } | null)?.approvalId : undefined,
+    }),
     onMutate: () => setRun(null),
     onSuccess: (r) => setRun(r),
   });
+  const heldApproval = run?.gatewayStatus === 202 ? (run.gatewayResponse as { approvalId?: string } | null)?.approvalId : undefined;
 
   // Merge live receipt state into the step list.
   const steps = run ? run.steps.map((s) => {
@@ -86,7 +91,8 @@ export default function DemoPage() {
         <aside className="card space-y-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Outcome</h2>
           <Badge tone={tone}>{outcome === "idle" ? "Idle" : outcome === "running" ? "Running" : outcome === "blocked" ? "Blocked before payment" : outcome === "error" ? "Error" : outcome}</Badge>
-          {run?.outcome === "blocked" && <Alert tone="blue">No money moved. {String((run.gatewayResponse as { error?: string })?.error ?? "")}</Alert>}
+          {run?.outcome === "blocked" && !heldApproval && <Alert tone="blue">No money moved. {String((run.gatewayResponse as { error?: string })?.error ?? "")}</Alert>}
+          {heldApproval && <Alert tone="amber">Held for a human. No money moved. <Link className="underline" href="/owner/approvals">Approve it with World ID</Link> as the owner, then run this scenario again.</Alert>}
           {receipt.data && (
             <dl className="space-y-1.5 text-sm">
               <Row k="Status"><StatusBadge status={receipt.data.status} /></Row>

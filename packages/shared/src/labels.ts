@@ -56,6 +56,7 @@ export const DEMO_SCENARIOS = [
   { id: "honest-error", label: "Honest failure", expect: "Refunded, no slash" },
   { id: "wrong-value", label: "Valid but wrong data", expect: "Delivered (known limit)" },
   { id: "over-limit", label: "Over the limit", expect: "Blocked before payment" },
+  { id: "needs-approval", label: "Needs owner approval", expect: "Held until a human approves (World ID)" },
 ] as const;
 
 export type ScenarioId = (typeof DEMO_SCENARIOS)[number]["id"];

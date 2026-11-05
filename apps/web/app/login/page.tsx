@@ -20,7 +20,8 @@ function Login() {
   const [role, setRole] = useState<Role>((params.get("role") as Role) ?? "owner");
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("demo");
-  const cfg = useQuery({ queryKey: ["auth-config"], queryFn: () => get<{ world: boolean; environment: string; devLogin: boolean }>("/api/auth/config") });
+  const cfg = useQuery({ queryKey: ["auth-config"], queryFn: () => get<{ world: boolean; environment: string; devLogin: boolean; agentPass: boolean }>("/api/auth/config") });
+  const denied = params.get("world") === "denied";
 
   const done = async () => { await qc.invalidateQueries({ queryKey: ["me"] }); router.push(role === "owner" ? "/owner" : "/merchant"); };
 
@@ -35,6 +36,13 @@ function Login() {
         ))}
       </div>
 
+      {role === "owner" && cfg.data?.agentPass && (
+        <div className="card space-y-2">
+          <a className="btn-primary w-full" href="/api/world/oidc/start?purpose=login">Sign in with World ID Agent Pass</a>
+          <p className="text-xs text-slate-500">OpenID Connect through auth.world.org. The same World ID is asked again, fresh, before you approve a large agent payment.</p>
+          {denied && <Alert tone="red">World ID sign-in did not complete ({params.get("reason")}).</Alert>}
+        </div>
+      )}
       <div className="card space-y-3">
         {cfg.data?.world ? (
           <>

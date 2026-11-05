@@ -44,7 +44,9 @@ const DEMO = [
   { slug: "honest-error", name: "Honest Failure API", price, timeoutMs: 10_000 },
   { slug: "wrong-value", name: "Confidently Wrong Data", price, timeoutMs: 10_000 },
   { slug: "premium-data", name: "Premium Price Feed", price: 600_000, timeoutMs: 10_000 },
+  { slug: "big-ticket", name: "Big Ticket Feed", price: 300_000, timeoutMs: 10_000 }, // above the approval threshold, below the cap
 ];
+const APPROVAL_THRESHOLD = parseUsdc(e.DEMO_APPROVAL_USDC || "0.25");
 
 // Demo owner + agent --------------------------------------------------------------------
 let owner = db.select().from(accounts).where(eq(accounts.worldNullifier, "seed:demo-owner")).get();
@@ -59,12 +61,12 @@ if (!agent) {
   const id = newId("agt");
   db.insert(agents).values({
     id, ownerId: owner.id, name: "Demo research agent", hederaAccountId: agentAccount, apiKeyHash: sha256(apiKey),
-    perCallCap: parseUsdc("0.50"), dailyCap: parseUsdc("5"), approvalThreshold: parseUsdc("0.50"), minScore: 60, allowlistOnly: true,
+    perCallCap: parseUsdc("0.50"), dailyCap: parseUsdc("5"), approvalThreshold: APPROVAL_THRESHOLD, minScore: 60, allowlistOnly: true,
   }).run();
   agent = db.select().from(agents).where(eq(agents.id, id)).get()!;
-} else if (e.DEMO_AGENT_KEY) {
-  db.update(agents).set({ apiKeyHash: sha256(e.DEMO_AGENT_KEY) }).where(eq(agents.id, agent.id)).run();
-  apiKey = e.DEMO_AGENT_KEY;
+} else {
+  db.update(agents).set({ approvalThreshold: APPROVAL_THRESHOLD, ...(e.DEMO_AGENT_KEY ? { apiKeyHash: sha256(e.DEMO_AGENT_KEY) } : {}) }).where(eq(agents.id, agent.id)).run();
+  apiKey = e.DEMO_AGENT_KEY || null;
 }
 
 // Merchants ------------------------------------------------------------------------------
@@ -117,7 +119,12 @@ for (const id of ids) {
   const amount = target - m.bondBalance;
   let dep: { amount: number; txId: string | null };
   if (fund) {
-    dep = await fundBond(id, amount);
+    try {
+      dep = await fundBond(id, amount);
+    } catch (err) {
+      console.log(`- ${m.slug.padEnd(15)} NOT funded (${String((err as Error).message).slice(0, 80)}). Top up the gateway with USDC and re-run seed.`);
+      continue;
+    }
     console.log(`- ${m.slug.padEnd(15)} funded bond +${amount} micro USDC  https://hashscan.io/testnet/transaction/${dep.txId}`);
   } else {
     dep = { amount, txId: null };

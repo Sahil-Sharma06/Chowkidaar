@@ -42,7 +42,7 @@ const client = x402Client.fromConfig({
 const payFetch = wrapFetchWithPayment(fetch, client);
 
 // Scenario -> merchant slug. "over-limit" calls a 0.60 USDC merchant against a 0.50 cap.
-const SLUG: Record<string, string> = Object.fromEntries(DEMO_SCENARIOS.map((s) => [s.id, s.id === "over-limit" ? "premium-data" : s.id]));
+const SLUG: Record<string, string> = Object.fromEntries(DEMO_SCENARIOS.map((s) => [s.id, s.id === "over-limit" ? "premium-data" : s.id === "needs-approval" ? "big-ticket" : s.id]));
 
 /* ------------------------------ Arkiv read (optional) ------------------------------ */
 type Rep = { score: string | number; totalCalls: bigint | number; failedCalls: bigint | number; $key?: string } | null;
@@ -80,7 +80,7 @@ app.get("/status", async (c) => {
 });
 
 app.post("/run", async (c) => {
-  const { scenario } = (await c.req.json().catch(() => ({}))) as { scenario?: string };
+  const { scenario, approvalId } = (await c.req.json().catch(() => ({}))) as { scenario?: string; approvalId?: string };
   const slug: string | undefined = scenario ? SLUG[scenario] : undefined;
   if (!slug) return c.json({ error: "unknown_scenario", scenarios: DEMO_SCENARIOS.map((s) => s.id) }, 400);
 
@@ -107,9 +107,10 @@ app.post("/run", async (c) => {
   set("policy", { state: "running" });
   let res: Response;
   try {
+    // Reuse an approved approval for this merchant if the owner granted one.
     res = await payFetch(`${env.gatewayUrl}/v1/call/${slug}`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-agent-key": env.apiKey },
+      headers: { "content-type": "application/json", "x-agent-key": env.apiKey, ...(approvalId ? { "x-approval-id": approvalId } : {}) },
       body: JSON.stringify({ query: "hbar-price", at: Date.now() }),
       signal: AbortSignal.timeout(90_000),
     });
@@ -123,7 +124,13 @@ app.post("/run", async (c) => {
   const body = await res.json().catch(() => null) as Record<string, unknown> | null;
   result.gatewayResponse = body;
 
-  if (res.status === 401 || res.status === 403 || res.status === 202) {
+  if (res.status === 202) {
+    set("policy", { state: "failed", detail: `Held: owner approval required (approval ${String(body?.approvalId)}). Approve it with World ID in the owner dashboard, then run again.` });
+    for (const k of ["agent_pay", "merchant_pay", "checks", "outcome", "hcs"]) set(k, { state: "skipped" });
+    result.outcome = "blocked";
+    return c.json(result, 200);
+  }
+  if (res.status === 401 || res.status === 403) {
     set("policy", { state: "failed", detail: `Blocked before payment: ${String(body?.error)}` });
     for (const k of ["agent_pay", "merchant_pay", "checks", "outcome", "hcs"]) set(k, { state: "skipped" });
     result.outcome = "blocked";
