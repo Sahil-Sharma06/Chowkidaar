@@ -2,7 +2,11 @@
   "name": "agent-payment-protection",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "packages/*", "scripts"],
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "scripts"
+  ],
   "scripts": {
     "dev": "concurrently -k -n gateway,merchants,agent,web -c blue,green,yellow,magenta \"npm run dev -w apps/gateway\" \"npm run dev -w apps/demo-merchants\" \"npm run dev -w apps/demo-agent\" \"npm run dev -w apps/web\"",
     "dev:backend": "concurrently -k -n gateway,merchants,agent -c blue,green,yellow \"npm run dev -w apps/gateway\" \"npm run dev -w apps/demo-merchants\" \"npm run dev -w apps/demo-agent\"",
@@ -11,7 +15,9 @@
     "smoke": "npm run smoke -w scripts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test -w apps/gateway",
-    "build": "npm run build -w apps/web"
+    "build": "npm run build -w apps/web",
+    "mock-facilitator": "node --import tsx scripts/mock-facilitator.ts",
+    "dev:e2e": "concurrently -k -n facilitator,gateway,merchants,agent,web -c cyan,blue,green,yellow,magenta \"node --import tsx scripts/mock-facilitator.ts\" \"node --env-file=.env.e2e --import tsx apps/gateway/src/index.ts\" \"node --env-file=.env.e2e --import tsx apps/demo-merchants/src/index.ts\" \"node --env-file=.env.e2e --import tsx apps/demo-agent/src/index.ts\" \"npm run dev -w apps/web\""
   },
   "devDependencies": {
     "concurrently": "10.0.6",
