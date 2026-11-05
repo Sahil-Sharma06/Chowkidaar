@@ -2,14 +2,49 @@ import { sqliteTable, text, integer, uniqueIndex, index } from "drizzle-orm/sqli
 
 const now = () => Date.now();
 
+/**
+ * One row per human. The login identity is World ID Agent Pass (`iss|sub`, action "agent-pass-oidc");
+ * "dev" accounts exist only when Agent Pass is not configured and DEMO_MODE is on.
+ * Roles are capabilities on the same account: one person can run agents and sell a service.
+ */
 export const accounts = sqliteTable("accounts", {
   id: text("id").primaryKey(),
-  role: text("role", { enum: ["owner", "merchant"] }).notNull(),
   worldAction: text("world_action").notNull(),
   // Text, because a nullifier is too large for a SQLite integer.
   worldNullifier: text("world_nullifier").notNull(),
+  displayName: text("display_name"),
+  isOwner: integer("is_owner", { mode: "boolean" }).notNull().default(false),
+  isMerchant: integer("is_merchant", { mode: "boolean" }).notNull().default(false),
+  // IDKit Proof of Human nullifier for "merchant-register-v1": one human, one merchant, forever.
+  merchantNullifier: text("merchant_nullifier").unique(),
+  merchantVerifiedAt: integer("merchant_verified_at"),
+  lastLoginAt: integer("last_login_at"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [uniqueIndex("uniq_nullifier").on(t.worldNullifier, t.worldAction)]);
+
+/** Server-side sessions: the cookie holds a random token, the DB holds its hash, so logout really revokes. */
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(), // sha256(token)
+  accountId: text("account_id").notNull().references(() => accounts.id),
+  userAgent: text("user_agent"),
+  // Agent Pass step-up: a fresh verification grants one sensitive action of this scope, briefly.
+  stepUpScope: text("step_up_scope"),
+  stepUpAt: integer("step_up_at"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  lastSeenAt: integer("last_seen_at").notNull().$defaultFn(now),
+  expiresAt: integer("expires_at").notNull(),
+  revokedAt: integer("revoked_at"),
+}, (t) => [index("idx_sessions_account").on(t.accountId)]);
+
+/** In-flight Agent Pass (OIDC) requests: PKCE verifier + nonce, single use, short-lived. */
+export const oidcStates = sqliteTable("oidc_states", {
+  state: text("state").primaryKey(),
+  verifier: text("verifier").notNull(),
+  nonce: text("nonce").notNull(),
+  purpose: text("purpose", { enum: ["login", "approval", "stepup"] }).notNull(),
+  payload: text("payload", { mode: "json" }).$type<Record<string, string>>().notNull(),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+});
 
 export const agents = sqliteTable("agents", {
   id: text("id").primaryKey(),
@@ -120,3 +155,4 @@ export type Payment = typeof payments.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
 export type Approval = typeof approvals.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
+export type SessionRow = typeof sessions.$inferSelect;

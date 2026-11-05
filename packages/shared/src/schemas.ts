@@ -52,9 +52,14 @@ export const patchMerchantSchema = z.object({
 
 export const depositSchema = z.object({ txId: z.string().min(5) });
 
+/** IDKit proof of human, submitted by a signed-in account that wants to become a merchant. */
 export const worldVerifySchema = z.object({
-  role: z.enum(["owner", "merchant"]),
   idkitResponse: z.record(z.string(), z.unknown()),
 });
+
+export const roleSchema = z.enum(["owner", "merchant"]);
+export const enableRoleSchema = z.object({ role: roleSchema });
+export const patchMeSchema = z.object({ displayName: z.string().trim().min(1).max(40) });
+export const devLoginSchema = z.object({ name: z.string().trim().min(1).max(40).regex(/^[\w .-]+$/, "Letters, numbers, spaces, . _ -") });
 
 export const demoRunSchema = z.object({ scenario: z.string().min(1) });
