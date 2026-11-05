@@ -3,6 +3,9 @@
  * Safe to re-run. Prints the env lines to paste into .env.
  */
 import { AccountCreateTransaction, Client, Hbar, PrivateKey, TokenAssociateTransaction, TopicCreateTransaction } from "@hiero-ledger/sdk";
+import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const USDC = process.env.USDC_TOKEN_ID || "0.0.429274";
 const MIRROR = process.env.MIRROR_URL || "https://testnet.mirrornode.hedera.com";
@@ -107,7 +110,17 @@ await balances("vault", e.VAULT_ACCOUNT_ID);
 await balances("agent", e.AGENT_ACCOUNT_ID);
 await balances("merchant", e.MERCHANT_ACCOUNT_ID);
 
-console.log(`\nAdd to .env (keys are shown ONCE, save them now):`);
-for (const line of created) console.log(line);
-console.log(`HCS_TOPIC_ID=${topic}`);
+// Write results straight into ../.env so nothing has to be copied by hand.
+const envPath = resolve(dirname(fileURLToPath(import.meta.url)), "../.env");
+if (!process.env.HCS_TOPIC_ID) created.push(`HCS_TOPIC_ID=${topic}`);
+if (created.length) {
+  let text = readFileSync(envPath, "utf8");
+  for (const line of created) {
+    const [k, v] = line.split("=", 2) as [string, string];
+    const re = new RegExp(`^${k}=.*$`, "m");
+    text = re.test(text) ? text.replace(re, `${k}=${v}`) : `${text.replace(/\s*$/, "")}\n${k}=${v}\n`;
+  }
+  writeFileSync(envPath, text);
+  console.log(`\nWrote ${created.length} line(s) into .env: ${created.map((l) => l.split("=")[0]).join(", ")}`);
+}
 console.log("\nFunding checklist: gateway needs HBAR (refund/HCS gas) + USDC (pays merchants); agent needs USDC; vault needs USDC (bonds, or run seed with SEED_FUND_FROM_GATEWAY=true).");
