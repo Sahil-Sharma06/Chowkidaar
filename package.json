@@ -22,5 +22,13 @@
   "devDependencies": {
     "concurrently": "10.0.6",
     "typescript": "5.9.3"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "protobufjs@7.6.6": true,
+    "protobufjs@8.6.6": true
   }
 }

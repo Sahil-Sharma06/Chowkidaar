@@ -15,7 +15,7 @@
     "@x402/core": "2.30.0",
     "@x402/fetch": "2.30.0",
     "@x402/hedera": "2.30.0",
-    "better-sqlite3": "13.0.3",
+    "better-sqlite3": "12.11.1",
     "drizzle-orm": "0.45.4"
   },
   "devDependencies": { "typescript": "5.9.3", "tsx": "4.23.15", "@types/node": "24.19.2", "@types/better-sqlite3": "9.6.0" }
