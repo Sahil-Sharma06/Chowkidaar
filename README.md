@@ -56,7 +56,7 @@ cp .env.example .env
 
 Fill in `.env`:
 
-1. **Hedera testnet accounts** (https://portal.hedera.com): `GATEWAY`, `VAULT`, `AGENT`, and a `MERCHANT` payout account. Export keys as DER. Gateway needs HBAR (it pays refund and HCS gas) and USDC (it pays merchants). Agent needs USDC. Vault needs USDC for bonds (or let `seed` fund it from the gateway).
+1. **One Hedera testnet account** from https://portal.hedera.com (it comes with 1000 HBAR). Put its id and DER key in `GATEWAY_ACCOUNT_ID` / `GATEWAY_PRIVATE_KEY`. `npm run setup` creates the vault, agent and merchant accounts from it and prints their lines for `.env`. Gateway needs USDC (it pays merchants) and the agent needs USDC; the vault gets USDC when `seed` funds bonds from the gateway.
 2. **USDC**: https://faucet.circle.com (Hedera testnet) or any testnet USDC holder.
 3. Optional **Arkiv**: tGLM at https://hub.arkiv.network/faucet, access key at https://hub.arkiv.network/access-keys. Set `ARKIV_PRIVATE_KEY` (0x EVM key) and `ARKIV_WRITER_ADDRESS`.
 4. Optional **World ID**: create an app at https://developer.world.org with staging actions `merchant-register-v1` and `owner-login-v1`. Set `WORLD_APP_ID`, `WORLD_RP_ID`, `WORLD_RP_SIGNING_KEY`, `NEXT_PUBLIC_WORLD_APP_ID`. Without these, `DEMO_MODE=true` enables a development login.

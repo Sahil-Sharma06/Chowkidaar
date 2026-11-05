@@ -2,7 +2,7 @@
  * One-time testnet setup: associate USDC with every account and create the HCS topic.
  * Safe to re-run. Prints the env lines to paste into .env.
  */
-import { Client, PrivateKey, TokenAssociateTransaction, TopicCreateTransaction } from "@hiero-ledger/sdk";
+import { AccountCreateTransaction, Client, Hbar, PrivateKey, TokenAssociateTransaction, TopicCreateTransaction } from "@hiero-ledger/sdk";
 
 const USDC = process.env.USDC_TOKEN_ID || "0.0.429274";
 const MIRROR = process.env.MIRROR_URL || "https://testnet.mirrornode.hedera.com";
@@ -63,7 +63,35 @@ async function balances(label: string, accountId?: string) {
 }
 
 const e = process.env;
-console.log("Associating USDC", USDC);
+const created: string[] = [];
+
+/** The portal gives one account per profile; create the others from the gateway account. */
+async function ensureAccount(label: string, idVar: string, keyVar: string, hbar: number) {
+  if (e[idVar] && e[keyVar]) return;
+  if (!e.GATEWAY_ACCOUNT_ID || !e.GATEWAY_PRIVATE_KEY) throw new Error("GATEWAY_ACCOUNT_ID and GATEWAY_PRIVATE_KEY are required in .env");
+  const client = Client.forTestnet().setOperator(e.GATEWAY_ACCOUNT_ID, parseKey(e.GATEWAY_PRIVATE_KEY));
+  const key = PrivateKey.generateECDSA();
+  const tx = await new AccountCreateTransaction()
+    .setECDSAKeyWithAlias(key)
+    .setInitialBalance(new Hbar(hbar))
+    .setMaxAutomaticTokenAssociations(-1)
+    .setAccountMemo(`agent-payment-protection ${label}`)
+    .execute(client);
+  const receipt = await tx.getReceipt(client);
+  const id = receipt.accountId!.toString();
+  client.close();
+  e[idVar] = id;
+  e[keyVar] = key.toStringDer();
+  created.push(`${idVar}=${id}`, `${keyVar}=${key.toStringDer()}`);
+  console.log(`- created ${label} account ${id} with ${hbar} HBAR`);
+}
+
+console.log("Accounts");
+await ensureAccount("vault", "VAULT_ACCOUNT_ID", "VAULT_PRIVATE_KEY", 10);
+await ensureAccount("agent", "AGENT_ACCOUNT_ID", "AGENT_PRIVATE_KEY", 10);
+await ensureAccount("merchant", "MERCHANT_ACCOUNT_ID", "MERCHANT_PRIVATE_KEY", 5);
+
+console.log("\nAssociating USDC", USDC);
 await associate("gateway", e.GATEWAY_ACCOUNT_ID!, e.GATEWAY_PRIVATE_KEY!);
 await associate("vault", e.VAULT_ACCOUNT_ID!, e.VAULT_PRIVATE_KEY!);
 await associate("agent", e.AGENT_ACCOUNT_ID!, e.AGENT_PRIVATE_KEY!);
@@ -79,5 +107,7 @@ await balances("vault", e.VAULT_ACCOUNT_ID);
 await balances("agent", e.AGENT_ACCOUNT_ID);
 await balances("merchant", e.MERCHANT_ACCOUNT_ID);
 
-console.log(`\nAdd to .env:\nHCS_TOPIC_ID=${topic}`);
+console.log(`\nAdd to .env (keys are shown ONCE, save them now):`);
+for (const line of created) console.log(line);
+console.log(`HCS_TOPIC_ID=${topic}`);
 console.log("\nFunding checklist: gateway needs HBAR (refund/HCS gas) + USDC (pays merchants); agent needs USDC; vault needs USDC (bonds, or run seed with SEED_FUND_FROM_GATEWAY=true).");
