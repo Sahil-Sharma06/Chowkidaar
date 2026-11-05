@@ -30,7 +30,7 @@ export function bondView(m: typeof merchants.$inferSelect) {
 
 export function merchantRoutes(db: Db) {
   const app = new Hono<Vars>();
-  for (const p of ["/merchants", "/merchants/*"]) app.use(p, requireRole("merchant"));
+  for (const p of ["/merchants", "/merchants/*"]) app.use(p, requireRole(db, "merchant"));
 
   const mine = (c: { get(k: "session"): Session }) =>
     db.select().from(merchants).where(eq(merchants.accountId, c.get("session").sub)).get();
