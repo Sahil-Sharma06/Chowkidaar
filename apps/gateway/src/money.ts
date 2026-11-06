@@ -40,3 +40,15 @@ export function scoreFor(totalCalls: number, failedCalls: number): number | null
   if (totalCalls < 5) return null;
   return Math.round((100 * (totalCalls - failedCalls)) / totalCalls);
 }
+
+/**
+ * Ranking score (0-100) used to choose between merchants, not shown as the public score.
+ * Every merchant starts as if it had RANK_PRIOR_OK good calls out of RANK_PRIOR_TOTAL (80),
+ * so a brand-new bonded merchant is neither ignored (a flat 50) nor trusted like a proven one,
+ * one lucky call does not jump to 100, and real calls quickly outweigh the prior.
+ */
+export const RANK_PRIOR_OK = 4;
+export const RANK_PRIOR_TOTAL = 5;
+export function rankFor(totalCalls: number, failedCalls: number): number {
+  return Math.round((100 * (totalCalls - failedCalls + RANK_PRIOR_OK)) / (totalCalls + RANK_PRIOR_TOTAL));
+}

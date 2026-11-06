@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
+import { zValidator } from "../validate.ts";
 import { and, desc, eq, gt, isNull, ne } from "drizzle-orm";
 import { devLoginSchema, enableRoleSchema, patchMeSchema, worldVerifySchema } from "@app/shared";
 import type { Db } from "../db/index.ts";

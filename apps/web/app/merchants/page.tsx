@@ -8,9 +8,10 @@ type ArkivRep = { key: string; merchantId: string; score: number; totalCalls: nu
 type Reputation = { enabled: boolean; writer: string | null; fetchedAt?: number; error?: string; entities: ArkivRep[] };
 
 export default function MerchantsPage() {
-  const q = useQuery({ queryKey: ["public-merchants"], queryFn: () => get<PublicMerchant[]>("/api/public/merchants"), refetchInterval: 5000 });
+  // Counters update the moment a call finishes; the Arkiv copy follows a few seconds later.
+  const q = useQuery({ queryKey: ["public-merchants"], queryFn: () => get<PublicMerchant[]>("/api/public/merchants"), refetchInterval: 3000 });
   // Read straight from Arkiv: the public, tamper-evident copy of every merchant's track record.
-  const rep = useQuery({ queryKey: ["arkiv-reputation"], queryFn: () => get<Reputation>("/api/public/reputation"), refetchInterval: 30_000, retry: 1 });
+  const rep = useQuery({ queryKey: ["arkiv-reputation"], queryFn: () => get<Reputation>("/api/public/reputation"), refetchInterval: 5000, retry: 1 });
   const byMerchant = new Map((rep.data?.entities ?? []).map((e) => [e.merchantId, e]));
 
   return (
@@ -45,15 +46,19 @@ export default function MerchantsPage() {
                   </td>
                   <td><Money micro={m.price} /></td>
                   <td>
-                    {r ? (
+                    {m.totalCalls > 0 ? (
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold">{r.score}/100</span>
-                          {r.totalCalls < 5 && <Badge tone="blue">New</Badge>}
+                          <span className="font-semibold">{Math.round((100 * (m.totalCalls - m.failedCalls)) / m.totalCalls)}/100</span>
+                          {m.totalCalls < 5 && <Badge tone="blue">New</Badge>}
                         </div>
-                        <div className="text-xs text-slate-500">{r.totalCalls - r.failedCalls} of {r.totalCalls} calls OK · <TxLink href={arkivEntityUrl(r.key)} label="Verify on Arkiv" /></div>
+                        <div className="text-xs text-slate-500">
+                          {m.totalCalls - m.failedCalls} of {m.totalCalls} calls OK ·{" "}
+                          {r && r.totalCalls >= m.totalCalls ? <TxLink href={arkivEntityUrl(r.key)} label="Verify on Arkiv" />
+                            : rep.data?.enabled ? <span>Publishing to Arkiv…</span> : null}
+                        </div>
                       </div>
-                    ) : <span className="text-xs text-slate-500">{rep.isLoading ? "Reading Arkiv…" : "No calls yet"}</span>}
+                    ) : <span className="text-xs text-slate-500">No calls yet</span>}
                   </td>
                   <td><Money micro={m.bondAvailable} /></td>
                   <td>{m.covered ? <Badge tone="green">Protected</Badge> : <Badge tone="amber">{m.status === "needs_bond" ? "Bond too low" : "Not available"}</Badge>}</td>

@@ -43,7 +43,7 @@ export function publicRoutes(db: Db) {
   let repCache: { at: number; body: unknown } | null = null;
   app.get("/reputation", async (c) => {
     if (!hasArkiv() || !env.arkivWriterAddress) return c.json({ source: "arkiv", enabled: false, writer: null, entities: [] });
-    if (repCache && Date.now() - repCache.at < 30_000) return c.json(repCache.body);
+    if (repCache && Date.now() - repCache.at < 5_000) return c.json(repCache.body);
     try {
       const { listReputations } = await import("../chain/arkiv.ts");
       const entities = await listReputations(env.arkivWriterAddress as `0x${string}`);

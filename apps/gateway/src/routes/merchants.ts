@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
+import { zValidator } from "../validate.ts";
 import { desc, eq } from "drizzle-orm";
 import { createMerchantSchema, depositSchema, patchMerchantSchema, withdrawSchema } from "@app/shared";
 import type { Db } from "../db/index.ts";

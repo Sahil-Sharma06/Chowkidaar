@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { zValidator } from "@hono/zod-validator";
+import { zValidator } from "../validate.ts";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { allowlistSchema, applyGatewayReply, askSchema, createAgentSchema, patchAgentSchema, playSchema, PIPELINE_STEPS, type DemoRunResult } from "@app/shared";
 import type { Db } from "../db/index.ts";

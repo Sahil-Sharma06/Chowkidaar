@@ -9,14 +9,14 @@ import type { Db } from "./db/index.ts";
 import { schema } from "./db/index.ts";
 import type { Agent } from "./db/schema.ts";
 import { env } from "./env.ts";
-import { lockFor, totalFor } from "./money.ts";
+import { lockFor, rankFor, scoreFor, totalFor } from "./money.ts";
 
 const { allowedMerchants, merchants } = schema;
 
 export type AskInput = { query: string; approvalId?: string; slug?: string };
 export type Candidate = {
   id: string; slug: string; name: string; category: string; price: string; total: string;
-  score: number | null; rank: number; matched: string[]; eligible: boolean; why: string[];
+  score: number | null; rank: number; calls: number; matched: string[]; eligible: boolean; why: string[];
 };
 export type AskResult = {
   outcome: "delivered" | "refund_pending" | "held" | "blocked" | "error" | "no_merchant";
@@ -31,26 +31,39 @@ export type AskResult = {
   webOrigin: string;
 };
 
-export async function askAsAgent(db: Db, a: Agent, { query, approvalId, slug: pinned }: AskInput): Promise<AskResult> {
+/** Share of requests that try a new merchant (under 5 calls) instead of the best-ranked one. */
+export const EXPLORE_RATE = Number(process.env.EXPLORE_RATE ?? 0.15);
+
+/**
+ * Usually the best-ranked eligible merchant. Sometimes, a new eligible merchant that matched just
+ * as well, so newcomers can earn a track record. That is safe to do only because the newcomer's
+ * bond already covers a refund: the agent risks nothing by trying it.
+ */
+export function pick(candidates: Candidate[], random: () => number = Math.random): Candidate | undefined {
+  const best = candidates.find((m) => m.eligible);
+  if (!best) return undefined;
+  const newcomers = candidates.filter((m) => m.eligible && m.calls < 5 && m.matched.length === best.matched.length && m !== best);
+  if (newcomers.length && best.calls >= 5 && random() < EXPLORE_RATE) return newcomers[Math.floor(random() * newcomers.length)];
+  return best;
+}
+
+export async function askAsAgent(db: Db, a: Agent, { query, approvalId, slug: pinned }: AskInput, random: () => number = Math.random): Promise<AskResult> {
   // Reputation as the public record on Arkiv says it; the gateway's own numbers only if Arkiv is down.
-  const scores = new Map<string, number>();
-  const observed = new Map<string, number>(); // success rate of merchants too new to be scored, for ranking only
+  const counts = new Map<string, { total: number; failed: number }>();
   let scoreSource: "arkiv" | "gateway" = "gateway";
   try {
     const { cachedReputations } = await import("./chain/arkiv.ts");
-    // Same rule as the policy check: a merchant with fewer than 5 calls is "new", not scored.
-    for (const r of await cachedReputations()) {
-      if (r.totalCalls >= 5) scores.set(r.merchantId, r.score);
-      else if (r.totalCalls > 0) observed.set(r.merchantId, r.score);
-    }
+    for (const r of await cachedReputations(10_000)) counts.set(r.merchantId, { total: r.totalCalls, failed: r.failedCalls });
     scoreSource = "arkiv";
-  } catch { /* fall back to local scores */ }
+  } catch { /* fall back to local counters */ }
 
   const allowedIds = new Set(db.select({ id: allowedMerchants.merchantId }).from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all().map((x) => x.id));
   // Only merchants whose own words match the request are considered: the agent never pays
   // someone for something they do not sell.
   const candidates: Candidate[] = db.select().from(merchants).where(eq(merchants.status, "live")).all().map((m) => {
-    const score = scoreSource === "arkiv" ? scores.get(m.id) ?? null : m.score;
+    const c = scoreSource === "arkiv" ? counts.get(m.id) ?? { total: 0, failed: 0 } : { total: m.totalCalls, failed: m.failedCalls };
+    // Same rule as the policy check: under 5 calls a merchant is "new" and has no public score.
+    const score = scoreFor(c.total, c.failed);
     const matched = matchWords(query, m);
     const why: string[] = [];
     if (matched.length === 0) why.push("no_match");
@@ -58,14 +71,13 @@ export async function askAsAgent(db: Db, a: Agent, { query, approvalId, slug: pi
     if (m.bondBalance - m.bondLocked < lockFor(m.price)) why.push("not_covered");
     if (m.price > a.perCallCap) why.push("above_cap");
     if (score !== null && score < a.minScore) why.push("low_score");
-    // Rank: a real score first; for new merchants, what has been observed so far; unknown sits in the middle.
-    const rank = score ?? observed.get(m.id) ?? (scoreSource === "gateway" && m.totalCalls > 0 ? Math.round((100 * (m.totalCalls - m.failedCalls)) / m.totalCalls) : 50);
-    return { id: m.id, slug: m.slug, name: m.name, category: m.category, price: String(m.price), total: String(totalFor(m.price)), score, rank, matched, eligible: why.length === 0, why };
+    const rank = rankFor(c.total, c.failed);
+    return { id: m.id, slug: m.slug, name: m.name, category: m.category, price: String(m.price), total: String(totalFor(m.price)), score, rank, calls: c.total, matched, eligible: why.length === 0, why };
   }).sort((x, y) => y.matched.length - x.matched.length || y.rank - x.rank || Number(x.price) - Number(y.price));
   const intent = { words: [...new Set(candidates.flatMap((m) => m.matched))], categories: [...new Set(candidates.filter((m) => m.matched.length).map((m) => m.category))] };
   const base = { intent, scoreSource, candidates, webOrigin: env.webOrigin };
 
-  const chosen = pinned ? candidates.find((m) => m.slug === pinned) : candidates.find((m) => m.eligible);
+  const chosen = pinned ? candidates.find((m) => m.slug === pinned) : pick(candidates, random);
   if (!chosen) return { outcome: "no_merchant", ...base, merchant: null, status: null, body: null, agentTx: null };
   if (!a.custodialEnc) return { outcome: "error", ...base, merchant: chosen, status: null, body: null, agentTx: null, error: "This agent pays with its own key; ask is only for gateway-held wallets." };
 

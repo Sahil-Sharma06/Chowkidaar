@@ -14,7 +14,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   let body: unknown = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
   if (!res.ok) {
-    const code = (body as { error?: string })?.error ?? `http_${res.status}`;
+    const raw = (body as { error?: unknown })?.error;
+    const code = typeof raw === "string" ? raw : `http_${res.status}`;
     throw new ApiError(res.status, code, body);
   }
   return body as T;

@@ -34,7 +34,7 @@ export function recordOutcome(db: Db, merchantId: string, failure: boolean, coun
   const failedCalls = m.failedCalls + (failure ? 1 : 0);
   db.update(merchants).set({ totalCalls, failedCalls, score: scoreFor(totalCalls, failedCalls) })
     .where(eq(merchants.id, merchantId)).run();
-  if (hasArkiv()) enqueue(db, "arkiv", { merchantId }, 10_000);
+  if (hasArkiv()) enqueue(db, "arkiv", { merchantId }, 2_000);
 }
 
 // Chain modules are loaded lazily so unit tests never touch the network.
