@@ -86,13 +86,15 @@ Open http://localhost:3000/demo.
 4. Objective checks run. Pass: body returned to the agent. Fail: the payment becomes `refund_pending` with its fault case. On a timeout the gateway asks the mirror node whether its USDC reached the merchant to decide between case A and B.
 5. The worker submits the refund (`TransferTransaction` with a fixed transaction id so a retry can never pay twice), slashes the bond ledger, publishes the HCS receipt, and batches a reputation update to Arkiv.
 
-Settled Hedera transaction of one paid request: **TODO paste HashScan link after running `npm run smoke`**.
+Settled Hedera transactions of real paid requests: agent → gateway settlement [`0.0.7162784-1793909332-800301584`](https://hashscan.io/testnet/transaction/0.0.7162784-1793909332-800301584), three-party refund with bond slash [`0.0.6825454-1793909547-261933222`](https://hashscan.io/testnet/transaction/0.0.6825454-1793909547-261933222), receipts on HCS topic [`0.0.11329161`](https://hashscan.io/testnet/topic/0.0.11329161).
 
 ## API
 
-Agent: `POST /v1/call/:slug`, `GET /v1/payments/:id`, `GET /v1/merchants/:slug`.
-Owner: `/api/agents`, `/api/agents/:id/allowlist`, `/api/approvals`. Merchant: `/api/merchants`, `/api/merchants/:id/test`, `/api/merchants/:id/bond/deposits`.
-Public: `/api/public/merchants`, `/api/public/receipts/:id`, `/api/public/stats`, `/api/public/config`.
+Full reference, with request/response shapes, error codes and a client example: **[docs/API.md](docs/API.md)**.
+
+In short — Agent: `POST /v1/call/:slug` (x402), `GET /v1/merchants/:slug`, `GET /v1/payments/:id`.
+Owner: `/api/agents`, `/api/agents/:id/{allowlist,fund,play,ask}`, `/api/approvals`. Merchant: `/api/merchants`, `/api/merchants/:id/{test,bond,bond/deposits,bond/withdraw}`.
+Public: `/api/public/{config,stats,merchants,reputation,receipts}`. All paths are relative to the gateway origin; `GET /api/public/config` returns the environment (network, token, vault, HCS topic, fee, penalty).
 
 ## Tests
 
