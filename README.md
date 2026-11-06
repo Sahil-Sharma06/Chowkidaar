@@ -99,6 +99,10 @@ Settled Hedera transactions of real paid requests: agent → gateway settlement 
 
 Try it without a host: `CHOWKIDAAR_AGENT_KEY=apk_... node packages/mcp/smoke.mjs "get me a burger"`.
 
+## Use it from Telegram
+
+`packages/telegram` is a bot with the same four operations. Create a bot with @BotFather, put its token in `.env` as `TELEGRAM_BOT_TOKEN`, run `npm run telegram`. Each Telegram user links their own agent once (`/link apk_...`, the message is deleted afterwards) and then just types what they want: "get me a burger", "book me a cab". Deliveries come back with the HashScan transaction, failures with the refund from the merchant's bond, and held payments with the approval link, since only the verified owner can raise the limit.
+
 ## API
 
 Full reference, with request/response shapes, error codes and a client example: **[docs/API.md](docs/API.md)**.

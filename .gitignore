@@ -11,3 +11,8 @@ data/
 .DS_Store
 .env.e2e
 *.tsbuildinfo
+
+# local env copies
+.env.*
+!.env.example
+packages/telegram/data/
