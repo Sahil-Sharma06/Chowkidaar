@@ -6,7 +6,7 @@
  * ponytail: sealed with a key derived from JWT_SECRET; move to a KMS before holding anything but testnet funds.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { AccountCreateTransaction, Hbar, PrivateKey, TransferTransaction } from "@hiero-ledger/sdk";
+import { AccountCreateTransaction, Hbar, PrivateKey, ScheduleCreateTransaction, Timestamp, TransferTransaction } from "@hiero-ledger/sdk";
 import { x402Client } from "@x402/core/client";
 import { wrapFetchWithPayment, decodePaymentResponseHeader } from "@x402/fetch";
 import { ExactHederaScheme } from "@x402/hedera/exact/client";
@@ -54,6 +54,26 @@ export async function fundAgent(to: string, amount: number) {
     .execute(client);
   const receipt = await tx.getReceipt(client);
   return { txId: tx.transactionId.toString(), status: receipt.status.toString() };
+}
+
+/**
+ * Demo mode only: the same top-up, but as a Scheduled Transaction (HIP-423) that the network executes
+ * at `at`. The gateway is the only required signer, so with waitForExpiry the transfer sits on-chain
+ * until then; the schedule id is visible on HashScan the whole time.
+ */
+export async function scheduleFunding(to: string, amount: number, at: Date) {
+  const transfer = new TransferTransaction()
+    .addTokenTransfer(USDC, env.gatewayId, -amount)
+    .addTokenTransfer(USDC, to, amount)
+    .setTransactionMemo("chowkidaar scheduled funding");
+  const tx = await new ScheduleCreateTransaction()
+    .setScheduledTransaction(transfer)
+    .setExpirationTime(Timestamp.fromDate(at))
+    .setWaitForExpiry(true)
+    .setScheduleMemo(`chowkidaar funding ${to}`)
+    .execute(client);
+  const receipt = await tx.getReceipt(client);
+  return { scheduleId: receipt.scheduleId!.toString(), txId: tx.transactionId.toString() };
 }
 
 export async function payAsAgent(opts: { accountId: string; walletKey: string; apiKey: string; slug: string; body: unknown; approvalId?: string }) {

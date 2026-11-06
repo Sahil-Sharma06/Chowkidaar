@@ -12,6 +12,7 @@ export interface Receipt {
   merchant: { id: string; slug: string; name: string };
   agentAccount: string;
   agentName: string;
+  agentUaid: string | null; // HCS-14 Universal Agent ID
   money: {
     price: string;
     fee: string;

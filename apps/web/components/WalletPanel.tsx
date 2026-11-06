@@ -22,7 +22,10 @@ export function useWallet(accountId: string | undefined) {
   });
 }
 
-export function WalletPanel({ agentId, accountId, custodial, compact }: { agentId: string; accountId: string; custodial: boolean; compact?: boolean }) {
+type Scheduled = { scheduleId: string; amount: number; executeAt: number };
+const EVERY = [["120", "2 minutes (demo)"], ["3600", "hour"], ["86400", "day"], ["604800", "week"]] as const;
+
+export function WalletPanel({ agentId, accountId, custodial, compact, scheduled = [] }: { agentId: string; accountId: string; custodial: boolean; compact?: boolean; scheduled?: Scheduled[] }) {
   const qc = useQueryClient();
   const w = useWallet(accountId);
   const cfg = useQuery({ queryKey: ["config"], queryFn: () => get<Config>("/api/public/config"), staleTime: 60_000 });
@@ -31,6 +34,12 @@ export function WalletPanel({ agentId, accountId, custodial, compact }: { agentI
     mutationFn: () => post<{ amount: number; txId: string }>(`/api/agents/${agentId}/fund`),
     onSuccess: (r) => { setFunded(r.txId); setTimeout(() => qc.invalidateQueries({ queryKey: ["wallet", accountId] }), 4000); },
   });
+  const [sched, setSched] = useState({ amount: "0.5", everySec: "120", times: "2" });
+  const schedule = useMutation({
+    mutationFn: () => post<{ created: Scheduled[] }>(`/api/agents/${agentId}/fund/schedule`, { amount: Math.round(Number(sched.amount) * 1e6), everySec: Number(sched.everySec), times: Number(sched.times) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agent", agentId] }),
+  });
+  const now = Date.now();
 
   return (
     <section className={compact ? "space-y-2 rounded-lg bg-surface-container-low p-3" : "card space-y-3"}>
@@ -50,6 +59,29 @@ export function WalletPanel({ agentId, accountId, custodial, compact }: { agentI
           </button>
           {funded && <span>Sent · <TxLink id={funded} label="HashScan" /></span>}
           {fund.isError && <span className="text-error">Funding failed. Is the gateway out of testnet USDC?</span>}
+        </div>
+      )}
+      {custodial && cfg.data?.features.demoMode && !compact && (
+        <div className="space-y-2 rounded-lg bg-surface-container-low p-3 text-xs">
+          <div className="font-semibold">Scheduled top-ups <span className="font-normal text-on-surface-variant">· Hedera Scheduled Transactions: the network moves the USDC at each time, even if this gateway is down.</span></div>
+          <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); schedule.mutate(); }}>
+            <input className="input w-20" value={sched.amount} onChange={(e) => setSched({ ...sched, amount: e.target.value })} aria-label="USDC per top-up" /> USDC every
+            <select className="input w-auto" value={sched.everySec} onChange={(e) => setSched({ ...sched, everySec: e.target.value })} aria-label="Interval">{EVERY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+            × <input className="input w-14" type="number" min={1} max={8} value={sched.times} onChange={(e) => setSched({ ...sched, times: e.target.value })} aria-label="Times" />
+            <button type="submit" className="btn-secondary px-3 py-1.5 text-xs" disabled={schedule.isPending}>{schedule.isPending ? "Scheduling…" : "Schedule"}</button>
+            {schedule.isError && <span className="text-error">Could not schedule. Amount 0.1–5 USDC, at most 62 days ahead.</span>}
+          </form>
+          {scheduled.length > 0 && (
+            <ul className="space-y-1">
+              {scheduled.map((s) => (
+                <li key={s.scheduleId} className="flex flex-wrap items-center gap-2">
+                  <span className={s.executeAt <= now ? "text-on-surface-variant" : ""}>{s.executeAt <= now ? "Fired" : "Fires"} {new Date(s.executeAt).toLocaleString()}</span>
+                  <span className="money">{formatUsdc(s.amount)}</span>
+                  <a className="font-mono text-secondary hover:underline" href={`${HASHSCAN}/schedule/${s.scheduleId}`} target="_blank" rel="noreferrer">{s.scheduleId}</a>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
       {!compact && (

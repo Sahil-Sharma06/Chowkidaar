@@ -54,6 +54,9 @@ export const agents = sqliteTable("agents", {
   apiKeyHash: text("api_key_hash").notNull(),
   // Custodial agents (playground): the gateway created the wallet and keeps its key + API key sealed here.
   custodialEnc: text("custodial_enc"),
+  // HCS-14 Universal Agent ID (uaid:aid:...), registered on the HCS topic at creation; uaidSeq is that message.
+  uaid: text("uaid"),
+  uaidSeq: integer("uaid_seq"),
   perCallCap: integer("per_call_cap").notNull(),
   dailyCap: integer("daily_cap").notNull(),
   approvalThreshold: integer("approval_threshold").notNull(),
@@ -145,6 +148,15 @@ export const payments = sqliteTable("payments", {
   index("idx_payments_agent").on(t.agentId, t.createdAt),
   index("idx_payments_merchant").on(t.merchantId, t.createdAt),
 ]);
+
+/** Scheduled Transactions (HIP-423) that top up a custodial agent from the gateway at a set time. */
+export const fundingSchedules = sqliteTable("funding_schedules", {
+  scheduleId: text("schedule_id").primaryKey(), // Hedera schedule entity 0.0.x
+  agentId: text("agent_id").notNull().references(() => agents.id),
+  amount: integer("amount").notNull(),
+  executeAt: integer("execute_at").notNull(),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [index("idx_funding_agent").on(t.agentId)]);
 
 export const jobs = sqliteTable("jobs", {
   id: text("id").primaryKey(),

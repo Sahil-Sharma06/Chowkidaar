@@ -86,6 +86,13 @@ export const askSchema = z.object({
   slug: slug.optional(),
 });
 
+/** Scheduled top-ups: `times` transfers of `amount` micro-USDC, the first `everySec` from now, then every `everySec`. Max 62 days out (network limit). */
+export const scheduleFundingSchema = z.object({
+  amount: z.number().int().min(100_000).max(5_000_000),
+  everySec: z.number().int().min(120).max(30 * 86_400),
+  times: z.number().int().min(1).max(8),
+}).refine((s) => s.everySec * s.times <= 62 * 86_400, { message: "Schedules may reach at most 62 days ahead", path: ["times"] });
+
 /** Playground: the owner has a custodial agent pay a merchant for real. */
 export const playSchema = z.object({
   slug,

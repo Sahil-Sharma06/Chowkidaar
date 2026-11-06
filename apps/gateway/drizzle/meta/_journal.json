@@ -36,6 +36,13 @@
       "when": 1793937778216,
       "tag": "0004_merchant_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793997524755,
+      "tag": "0005_agent_uaid_funding_schedules",
+      "breakpoints": true
     }
   ]
 }

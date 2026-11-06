@@ -7,11 +7,13 @@ import { callMerchantLive } from "./pipeline.ts";
 import { gatewayPaidMerchant } from "./chain/mirror.ts";
 import { buildFacilitator } from "./x402.ts";
 import { recoverStuckPayments, startWorker } from "./worker.ts";
+import { backfillUaids } from "./routes/agents.ts";
 
 const { db } = openDb(env.dbPath);
 
 const recovered = recoverStuckPayments(db);
 if (recovered) console.log(`[startup] recovered ${recovered} stuck payment(s) as case C`);
+void backfillUaids(db);
 
 const app = createApp({
   db,

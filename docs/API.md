@@ -140,7 +140,7 @@ No auth. Returns the public merchant record plus the exact amount the agent will
 
 Header `x-agent-key`. The agent behind the key, its limits and allowlist, for MCP hosts and SDKs:
 ```json
-{ "id": "agt_...", "name": "Claude Desktop", "hederaAccountId": "0.0.x", "custodial": true, "status": "active",
+{ "id": "agt_...", "name": "Claude Desktop", "hederaAccountId": "0.0.x", "uaid": "uaid:aid:...;uid=agt_...;registry=chowkidaar;proto=x402;nativeId=hedera:testnet:0.0.x", "custodial": true, "status": "active",
   "perCallCap": "500000", "dailyCap": "5000000", "approvalThreshold": "250000", "minScore": 60, "allowlistOnly": true, "allowedMerchantIds": ["mer_..."], "spentToday": "102000" }
 ```
 
@@ -227,13 +227,14 @@ Used by the web app. All routes need a session cookie obtained through World ID 
 | Method, path | Body / notes |
 |---|---|
 | `GET /api/agents` | Your agents (see Agent record) |
-| `POST /api/agents` | `{ name, hederaAccountId?, perCallCap, dailyCap, approvalThreshold, minScore? }` (micro-USDC integers). **Omit `hederaAccountId` and the gateway creates a custodial testnet wallet** for the agent. Returns `201` with the Agent record plus `apiKey` (shown once). `409 hedera_account_in_use`, `502 wallet_create_failed`. |
+| `POST /api/agents` | `{ name, hederaAccountId?, perCallCap, dailyCap, approvalThreshold, minScore? }` (micro-USDC integers). **Omit `hederaAccountId` and the gateway creates a custodial testnet wallet** for the agent. The agent also gets an **HCS-14 Universal Agent ID** (`uaid`), announced on the HCS topic (`uaidSeq` is that message). Returns `201` with the Agent record plus `apiKey` (shown once). `409 hedera_account_in_use`, `502 wallet_create_failed`. |
 | `GET /api/agents/{id}` | One agent |
 | `PATCH /api/agents/{id}` | Any of `name, perCallCap, dailyCap, approvalThreshold, minScore, allowlistOnly, status: "active"\|"paused"`. Loosening needs step-up. `400 daily_cap_below_per_call`, `400 approval_above_per_call`. |
 | `POST /api/agents/{id}/rotate-key` | New API key (step-up). Returns the record plus `apiKey`. |
 | `PUT /api/agents/{id}/allowlist` | `{ merchantIds: [] }` → `{ merchantIds }` |
 | `GET /api/agents/{id}/payments` | Receipts for this agent (last 100) |
 | `POST /api/agents/{id}/fund` | Demo mode only, custodial agents only: the gateway sends 0.5 testnet USDC to the wallet. `{ amount, txId, status }`. |
+| `POST /api/agents/{id}/fund/schedule` | Same limits. `{ amount, everySec, times }` (0.1–5 USDC, every ≥ 2 min, ≤ 8 times, ≤ 62 days ahead). Creates one Hedera **Scheduled Transaction** per top-up with `waitForExpiry`; the network executes each at its time. `201 { created: [{ scheduleId, amount, executeAt }] }`. The Agent record lists them as `scheduledFunding`. |
 | `POST /api/agents/{id}/play` | Playground: `{ slug, body?, approvalId? }`. The custodial agent makes one real `/v1/call`; returns a `DemoRunResult` (timeline steps + outcome). |
 | `POST /api/agents/{id}/ask` | Console: `{ query, approvalId?, slug? }`. The agent **chooses the merchant itself** (allowed, covered, within cap, highest Arkiv score; merchants with < 5 calls count as new), pays, and returns: `{ outcome: "delivered"\|"refund_pending"\|"held"\|"blocked"\|"error"\|"no_merchant", scoreSource: "arkiv"\|"gateway", merchant, candidates: [{ slug, name, price, total, score, eligible, why: ["not_allowed"\|"not_covered"\|"above_cap"\|"low_score"] }], status, body, agentTx }` where `body` is the raw `/v1/call` response. |
 | `GET /api/owner/payments` | Receipts across all your agents (last 50) |

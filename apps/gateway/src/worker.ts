@@ -70,11 +70,12 @@ export function receiptMessage(db: Db, paymentId: string) {
   const p = db.select().from(payments).where(eq(payments.id, paymentId)).get();
   if (!p) throw new Error("payment_missing");
   const m = db.select({ slug: merchants.slug }).from(merchants).where(eq(merchants.id, p.merchantId)).get();
-  const a = db.select({ acct: agents.hederaAccountId }).from(agents).where(eq(agents.id, p.agentId)).get();
+  const a = db.select({ acct: agents.hederaAccountId, uaid: agents.uaid }).from(agents).where(eq(agents.id, p.agentId)).get();
   return {
     v: 1,
     paymentId: p.id,
     agent: a?.acct,
+    agentUaid: a?.uaid ?? null,
     merchant: m?.slug,
     price: String(p.price),
     fee: String(p.fee),

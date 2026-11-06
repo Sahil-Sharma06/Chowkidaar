@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, ShieldCheck } from "lucide-react";
 import type { PublicMerchant, Receipt } from "@app/shared";
-import { ApiError, get, isStepUp, patch, post, put, startStepUp, takePendingStepUp, type AgentRow } from "@/lib/api";
+import { ApiError, get, isStepUp, patch, post, put, startStepUp, takePendingStepUp, HASHSCAN, type AgentRow, type Config } from "@/lib/api";
 import { Alert, Badge, Field, Money, StatusBadge, fmtTime, microFromInput, usdcInput } from "@/lib/ui";
 import { reasonText } from "@/lib/world";
 import { WalletPanel } from "@/components/WalletPanel";
@@ -17,6 +17,13 @@ const ERRORS: Record<string, string> = {
   validation_error: "Check the values: amounts must be positive numbers.",
 };
 const errorText = (code: string) => ERRORS[code] ?? "Could not save. Please try again.";
+
+/** Link to the agent's registration message on the HCS topic. */
+function HcsLink({ seq }: { seq: number }) {
+  const cfg = useQuery({ queryKey: ["config"], queryFn: () => get<Config>("/api/public/config"), staleTime: 60_000 });
+  if (!cfg.data?.hcsTopicId) return null;
+  return <a className="text-blue-700 hover:underline" href={`${HASHSCAN}/topic/${cfg.data.hcsTopicId}?seq=${seq}`} target="_blank" rel="noreferrer">HCS message #{seq}</a>;
+}
 
 export default function AgentDetailPage() {
   return <Suspense><AgentDetail /></Suspense>;
@@ -71,14 +78,24 @@ function AgentDetail() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-semibold">{a.name}</h1><div className="text-xs text-slate-500">{a.hederaAccountId}</div></div>
+        <div>
+          <h1 className="text-2xl font-semibold">{a.name}</h1>
+          <div className="text-xs text-slate-500">{a.hederaAccountId}</div>
+          {a.uaid && (
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500" title="HCS-14 Universal Agent ID: deterministic from the agent's name and Hedera account, announced on the HCS topic">
+              <Badge tone="blue">HCS-14</Badge>
+              <code className="break-all">{a.uaid}</code>
+              {a.uaidSeq != null && <HcsLink seq={a.uaidSeq} />}
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-4">
           {a.custodial && <Link href="/console" className="btn-primary">Open console</Link>}
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={a.status === "paused"} onChange={(e) => update.mutate({ status: e.target.checked ? "paused" : "active" })} /> Paused (blocks all new payments)</label>
         </div>
       </div>
 
-      <WalletPanel agentId={a.id} accountId={a.hederaAccountId} custodial={a.custodial} />
+      <WalletPanel agentId={a.id} accountId={a.hederaAccountId} custodial={a.custodial} scheduled={a.scheduledFunding} />
       {a.custodial && <McpSnippet apiKey={newKey ?? undefined} />}
 
       {stepup === "denied" && <Alert tone="red">{reasonText(params.get("reason"))} Your change was not saved.</Alert>}

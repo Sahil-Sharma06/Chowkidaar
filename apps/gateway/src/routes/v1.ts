@@ -36,7 +36,7 @@ export function v1Routes(db: Db) {
     if (!a) return c.json({ error: "invalid_agent_key" }, 401);
     const allowed = db.select({ id: allowedMerchants.merchantId }).from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all().map((x) => x.id);
     return c.json({
-      id: a.id, name: a.name, hederaAccountId: a.hederaAccountId, custodial: Boolean(a.custodialEnc), status: a.status,
+      id: a.id, name: a.name, hederaAccountId: a.hederaAccountId, uaid: a.uaid, custodial: Boolean(a.custodialEnc), status: a.status,
       perCallCap: String(a.perCallCap), dailyCap: String(a.dailyCap), approvalThreshold: String(a.approvalThreshold), minScore: a.minScore,
       allowlistOnly: a.allowlistOnly, allowedMerchantIds: allowed, spentToday: String(todaySpend(db, a.id)),
     });

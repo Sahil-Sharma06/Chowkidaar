@@ -33,6 +33,7 @@ export function buildReceipt(db: Db, paymentId: string): Receipt | null {
     merchant: { id: m.id, slug: m.slug, name: m.name },
     agentAccount: a.hederaAccountId,
     agentName: a.name,
+    agentUaid: a.uaid,
     money: {
       price: String(p.price),
       fee: String(p.fee),

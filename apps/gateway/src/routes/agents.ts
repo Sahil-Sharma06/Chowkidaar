@@ -1,10 +1,11 @@
 import { Hono, type Context } from "hono";
 import { zValidator } from "../validate.ts";
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
-import { allowlistSchema, applyGatewayReply, askSchema, createAgentSchema, patchAgentSchema, playSchema, PIPELINE_STEPS, type DemoRunResult } from "@app/shared";
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { allowlistSchema, applyGatewayReply, askSchema, createAgentSchema, patchAgentSchema, playSchema, scheduleFundingSchema, PIPELINE_STEPS, type DemoRunResult } from "@app/shared";
 import type { Db } from "../db/index.ts";
 import { schema } from "../db/index.ts";
-import { env } from "../env.ts";
+import { env, hasHcs } from "../env.ts";
+import { agentUaid, registrationMessage } from "../hcs14.ts";
 import { newApiKey, newId, sha256 } from "../ids.ts";
 import { askAsAgent } from "../ask.ts";
 import { consumeStepUp, requireRole, stepUpRequired, type Session } from "../auth.ts";
@@ -14,9 +15,33 @@ import { todaySpend } from "../policy.ts";
 import { buildReceipt } from "../receipt.ts";
 import { toPublicMerchant } from "./public.ts";
 
-const { agents, allowedMerchants, merchants, payments, approvals } = schema;
+const { agents, allowedMerchants, merchants, payments, approvals, fundingSchedules } = schema;
 
 type Vars = { Variables: { session: Session } };
+
+/**
+ * Gives an agent its HCS-14 id and announces it on the HCS topic. Best effort: the id is stored even
+ * when the topic is off or the publish fails, so the agent is usable at once and the announcement can be retried.
+ */
+export async function registerUaid(db: Db, a: typeof agents.$inferSelect, log = console) {
+  const uaid = a.uaid ?? agentUaid({ id: a.id, name: a.name, account: a.hederaAccountId, network: env.network });
+  let uaidSeq = a.uaidSeq;
+  if (hasHcs() && uaidSeq == null) {
+    try {
+      const { publishReceipt } = await import("../chain/hedera.ts");
+      uaidSeq = await publishReceipt(registrationMessage({ uaid, name: a.name, account: a.hederaAccountId }));
+    } catch (err) { log.warn(`[hcs-14] could not announce ${a.id}: ${String(err)}`); }
+  }
+  db.update(agents).set({ uaid, uaidSeq }).where(eq(agents.id, a.id)).run();
+  return { uaid, uaidSeq };
+}
+
+/** Startup: agents created before HCS-14 support get their id now. */
+export async function backfillUaids(db: Db, log = console) {
+  const missing = db.select().from(agents).where(isNull(agents.uaid)).all();
+  for (const a of missing) await registerUaid(db, a, log);
+  if (missing.length) log.log(`[hcs-14] registered ${missing.length} agent id(s)`);
+}
 
 type Limits = { perCallCap: number; dailyCap: number; approvalThreshold: number; minScore: number; allowlistOnly: boolean };
 /** True when the change lets the agent spend more, or with less oversight, than before. */
@@ -39,7 +64,9 @@ export function agentRoutes(db: Db) {
     const { apiKeyHash: _h, custodialEnc, ...rest } = a;
     const allowed = db.select({ id: allowedMerchants.merchantId }).from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all();
     const last = db.select({ t: payments.createdAt }).from(payments).where(eq(payments.agentId, a.id)).orderBy(desc(payments.createdAt)).limit(1).get();
-    return { ...rest, custodial: Boolean(custodialEnc), spentToday: todaySpend(db, a.id), allowedMerchantIds: allowed.map((x) => x.id), lastPaymentAt: last?.t ?? null };
+    const scheduled = db.select().from(fundingSchedules).where(eq(fundingSchedules.agentId, a.id)).orderBy(fundingSchedules.executeAt).all()
+      .map((s) => ({ scheduleId: s.scheduleId, amount: s.amount, executeAt: s.executeAt }));
+    return { ...rest, custodial: Boolean(custodialEnc), spentToday: todaySpend(db, a.id), allowedMerchantIds: allowed.map((x) => x.id), lastPaymentAt: last?.t ?? null, scheduledFunding: scheduled };
   };
 
   app.get("/agents", (c) => {
@@ -69,8 +96,31 @@ export function agentRoutes(db: Db) {
     } catch (err) {
       return c.json({ error: "hedera_account_in_use", detail: String(err) }, 409);
     }
+    await registerUaid(db, db.select().from(agents).where(eq(agents.id, id)).get()!);
     const a = db.select().from(agents).where(eq(agents.id, id)).get()!;
     return c.json({ ...publicAgent(a), apiKey }, 201); // key shown once
+  });
+
+  /** Demo mode: queue `times` top-ups as Scheduled Transactions; the network moves the USDC at each time. */
+  app.post("/agents/:id/fund/schedule", zValidator("json", scheduleFundingSchema), async (c) => {
+    const a = ownAgent(c, c.req.param("id"));
+    if (!a) return c.json({ error: "not_found" }, 404);
+    if (!env.demoMode) return c.json({ error: "not_in_demo_mode" }, 403);
+    if (!a.custodialEnc) return c.json({ error: "not_custodial" }, 400);
+    const { amount, everySec, times } = c.req.valid("json");
+    const created: { scheduleId: string; amount: number; executeAt: number }[] = [];
+    try {
+      const { scheduleFunding } = await import("../custody.ts");
+      for (let i = 1; i <= times; i++) {
+        const executeAt = Date.now() + i * everySec * 1000;
+        const { scheduleId } = await scheduleFunding(a.hederaAccountId, amount, new Date(executeAt));
+        db.insert(fundingSchedules).values({ scheduleId, agentId: a.id, amount, executeAt }).run();
+        created.push({ scheduleId, amount, executeAt });
+      }
+    } catch (err) {
+      if (!created.length) return c.json({ error: "schedule_failed", detail: String(err) }, 502);
+    }
+    return c.json({ created }, 201); // partial success still reports what is on-chain
   });
 
   /** Demo mode: top up a custodial wallet with 0.5 testnet USDC from the gateway. */

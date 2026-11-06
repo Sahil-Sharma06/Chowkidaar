@@ -71,6 +71,7 @@ export type Config = {
 export type AgentRow = {
   id: string; name: string; hederaAccountId: string; custodial: boolean; perCallCap: number; dailyCap: number; approvalThreshold: number; minScore: number;
   allowlistOnly: boolean; status: "active" | "paused"; createdAt: number; spentToday: number; allowedMerchantIds: string[]; lastPaymentAt: number | null; apiKey?: string;
+  uaid: string | null; uaidSeq: number | null; scheduledFunding: { scheduleId: string; amount: number; executeAt: number }[];
 };
 export type ApprovalRow = {
   id: string; agentId: string; merchantId: string; amount: number; status: string; expiresAt: number; createdAt: number;

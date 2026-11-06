@@ -28,6 +28,8 @@ Agent ── x402 (price + 2% fee, upfront) ──▶ Gateway ── x402 (price
 
 Spending controls before any money moves: per-call cap, daily cap, merchant allowlist, minimum merchant score, bond coverage, and owner approval above a threshold.
 
+Every agent has an **HCS-14 Universal Agent ID** (`uaid:aid:…;registry=chowkidaar;proto=x402;nativeId=hedera:testnet:0.0.x`), deterministic from its name and Hedera account, announced on the HCS topic and stamped on every receipt, so spending history has an on-Hedera subject. Owners can fund an agent on a schedule with **Hedera Scheduled Transactions**: each top-up is created up front with `waitForExpiry` and the network executes it at its time, gateway up or down.
+
 ## Stack
 
 | Layer | Tech |
@@ -130,7 +132,7 @@ npm run build     # next build
 
 ## Hackathon tracks
 
-- **Hedera, AI Agents That Pay**: x402 endpoints settled on Hedera testnet, autonomous agent, spending controls, HCS audit log, USDC settlement.
+- **Hedera, AI Agents That Pay**: x402 endpoints settled on Hedera testnet, autonomous agent, spending controls, HCS audit log, USDC settlement, HCS-14 agent identity (registration [`0.0.11330367` seq 32](https://hashscan.io/testnet/topic/0.0.11330367?seq=32)), scheduled funding via Scheduled Transactions (executed schedule [`0.0.11345436`](https://hashscan.io/testnet/schedule/0.0.11345436)).
 - **Arkiv**: merchant reputation entities, see `arkiv/`.
 - **World ID**: merchant and owner identity, one human one merchant; debrief in `arkiv/../WORLD.md`.
 
