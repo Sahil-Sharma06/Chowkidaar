@@ -10,6 +10,7 @@ import { Alert, Badge, Field, Money, StatusBadge, fmtTime, microFromInput, usdcI
 import { reasonText } from "@/lib/world";
 import { WalletPanel } from "@/components/WalletPanel";
 import { McpSnippet } from "@/components/McpSnippet";
+import { Subscriptions } from "@/components/Subscriptions";
 
 const ERRORS: Record<string, string> = {
   daily_cap_below_per_call: "The daily cap must be at least the per-call cap.",
@@ -107,6 +108,7 @@ function AgentDetail() {
       </div>
 
       <WalletPanel agentId={a.id} accountId={a.hederaAccountId} custodial={a.custodial} scheduled={a.scheduledFunding} />
+      {a.custodial && <Subscriptions agentId={a.id} merchants={merchants.data ?? []} allowed={a.allowlistOnly ? allowed : new Set()} />}
       {a.custodial && <McpSnippet apiKey={newKey ?? undefined} />}
 
       {stepup === "denied" && <Alert tone="red">{reasonText(params.get("reason"))} Your change was not saved.</Alert>}

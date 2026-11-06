@@ -59,6 +59,28 @@ export async function txExists(txId: string): Promise<boolean> {
   return body.transactions.some((t) => t.result === "SUCCESS");
 }
 
+/**
+ * Did a Scheduled Transaction execute? Returns the executed transfer's transaction id (the agent's
+ * settlement for a subscription run), null while it is still waiting, "expired" once the network
+ * dropped it unexecuted (e.g. the wallet could not pay), or throws when the mirror node is unreachable.
+ */
+export async function scheduleExecution(scheduleId: string): Promise<string | null | "expired"> {
+  const res = await mirrorGet(`/schedules/${scheduleId}`);
+  if (!res.ok) throw new Error(`mirror schedule ${res.status}`);
+  const s = (await res.json()) as { executed_timestamp: string | null; expiration_time: string | null; deleted: boolean };
+  if (!s.executed_timestamp) {
+    // 10 minutes past expiry with no execution: the network will never run it.
+    if (s.deleted || (s.expiration_time && Number(s.expiration_time) + 600 < Date.now() / 1000)) return "expired";
+    return null;
+  }
+  const txs = await mirrorGet(`/transactions?timestamp=${s.executed_timestamp}`);
+  if (!txs.ok) throw new Error(`mirror transactions ${txs.status}`);
+  const { transactions } = (await txs.json()) as { transactions: (MirrorTx & { scheduled?: boolean })[] };
+  const hit = transactions.find((t) => t.scheduled && t.result === "SUCCESS");
+  if (!hit?.transaction_id) return "expired"; // executed but the inner transfer failed (e.g. insufficient USDC)
+  return hit.transaction_id;
+}
+
 export async function usdcBalance(accountId: string): Promise<number | null> {
   const res = await mirrorGet(`/accounts/${accountId}/tokens?token.id=${env.usdc}`);
   if (!res.ok) return null;

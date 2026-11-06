@@ -6,13 +6,13 @@
  * ponytail: sealed with a key derived from JWT_SECRET; move to a KMS before holding anything but testnet funds.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { AccountCreateTransaction, Hbar, PrivateKey, ScheduleCreateTransaction, Timestamp, TransferTransaction } from "@hiero-ledger/sdk";
+import { AccountCreateTransaction, Hbar, PrivateKey, ScheduleCreateTransaction, ScheduleDeleteTransaction, Timestamp, TransferTransaction } from "@hiero-ledger/sdk";
 import { x402Client } from "@x402/core/client";
 import { wrapFetchWithPayment, decodePaymentResponseHeader } from "@x402/fetch";
 import { ExactHederaScheme } from "@x402/hedera/exact/client";
 import { createClientHederaSigner, PrivateKey as XPrivateKey } from "@x402/hedera";
 import { env } from "./env.ts";
-import { client, USDC } from "./chain/hedera.ts";
+import { client, gatewayKey, USDC } from "./chain/hedera.ts";
 
 const KEY = createHash("sha256").update(env.jwtSecret).digest();
 
@@ -74,6 +74,35 @@ export async function scheduleFunding(to: string, amount: number, at: Date) {
     .execute(client);
   const receipt = await tx.getReceipt(client);
   return { scheduleId: receipt.scheduleId!.toString(), txId: tx.transactionId.toString() };
+}
+
+/**
+ * Subscription run: the agent's payment to the gateway as a Scheduled Transaction. The agent key signs
+ * the ScheduleCreate, so the inner transfer has every signature it needs and executes at `at`
+ * (waitForExpiry). The gateway pays the network fee and is admin key, so it can cancel.
+ */
+export async function scheduleAgentPayment(opts: { from: string; walletKey: string; amount: number; memo: string; at: Date }) {
+  const transfer = new TransferTransaction()
+    .addTokenTransfer(USDC, opts.from, -opts.amount)
+    .addTokenTransfer(USDC, env.gatewayId, opts.amount)
+    .setTransactionMemo(opts.memo);
+  const tx = await new ScheduleCreateTransaction()
+    .setScheduledTransaction(transfer)
+    .setAdminKey(gatewayKey.publicKey)
+    .setExpirationTime(Timestamp.fromDate(opts.at))
+    .setWaitForExpiry(true)
+    .setScheduleMemo(opts.memo)
+    .freezeWith(client)
+    .sign(PrivateKey.fromStringDer(opts.walletKey));
+  const res = await tx.execute(client);
+  const receipt = await res.getReceipt(client);
+  return { scheduleId: receipt.scheduleId!.toString(), txId: res.transactionId.toString() };
+}
+
+/** Cancel a run that has not fired yet. The gateway is the admin key. */
+export async function deleteSchedule(scheduleId: string) {
+  const res = await new ScheduleDeleteTransaction().setScheduleId(scheduleId).execute(client);
+  return (await res.getReceipt(client)).status.toString();
 }
 
 export async function payAsAgent(opts: { accountId: string; walletKey: string; apiKey: string; slug: string; body: unknown; approvalId?: string }) {

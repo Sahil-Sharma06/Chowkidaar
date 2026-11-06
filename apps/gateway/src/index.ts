@@ -15,15 +15,15 @@ const recovered = recoverStuckPayments(db);
 if (recovered) console.log(`[startup] recovered ${recovered} stuck payment(s) as case C`);
 void backfillUaids(db);
 
-const app = createApp({
+const pipeline = {
   db,
-  facilitator: buildFacilitator(),
   callMerchant: callMerchantLive,
-  gatewayPaidMerchant: (m, since) => gatewayPaidMerchant(m.payoutAccountId, since, m.price),
+  gatewayPaidMerchant: (m: { payoutAccountId: string; price: number }, since: number) => gatewayPaidMerchant(m.payoutAccountId, since, m.price),
   chainCheckDelayMs: 6000,
-});
+};
+const app = createApp({ ...pipeline, facilitator: buildFacilitator() });
 
-startWorker(db);
+startWorker(db, 1000, pipeline); // subscription runs reuse the same protected-call pipeline
 
 const server = serve({ fetch: app.fetch, port: env.port }, (info) => {
   console.log(`gateway listening on http://localhost:${info.port}`);

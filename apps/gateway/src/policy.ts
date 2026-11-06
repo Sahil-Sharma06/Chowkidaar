@@ -36,7 +36,7 @@ export function findAgentByKey(db: Db, apiKey: string | undefined): Agent | unde
 /** Runs the 9 policy checks in order. No money moves here. */
 export function checkPolicy(
   db: Db,
-  input: { apiKey?: string; slug: string; approvalId?: string; now?: number },
+  input: { apiKey?: string; slug: string; approvalId?: string; now?: number; skipApproval?: boolean },
 ): PolicyResult {
   const now = input.now ?? Date.now();
 
@@ -70,7 +70,8 @@ export function checkPolicy(
   }
 
   let approvalId: string | null = null;
-  if (total > agent.approvalThreshold) {
+  // skipApproval: the owner is setting this up in person (a subscription), which is the approval.
+  if (total > agent.approvalThreshold && !input.skipApproval) {
     const a = input.approvalId
       ? db.select().from(approvals).where(eq(approvals.id, input.approvalId)).get()
       : undefined;

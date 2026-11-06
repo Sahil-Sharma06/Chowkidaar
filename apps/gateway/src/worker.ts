@@ -4,10 +4,11 @@ import { schema } from "./db/index.ts";
 import type { Job } from "./db/schema.ts";
 import { env, hasArkiv, hasHcs } from "./env.ts";
 import { newId } from "./ids.ts";
-import { outcomeFor, scoreFor, type FaultCase } from "./money.ts";
-import { unlockBond } from "./policy.ts";
+import { feeFor, outcomeFor, scoreFor, totalFor, type FaultCase } from "./money.ts";
+import { checkPolicy, unlockBond } from "./policy.ts";
+import type { PipelineDeps } from "./pipeline.ts";
 
-const { jobs, payments, merchants, bondLedger, agents } = schema;
+const { jobs, payments, merchants, bondLedger, agents, subscriptions, subscriptionRuns } = schema;
 
 const BACKOFF_MS = [2_000, 5_000, 15_000, 60_000];
 const nextDelay = (attempts: number) => BACKOFF_MS[attempts] ?? 300_000;
@@ -44,6 +45,7 @@ type Chain = {
   publishReceipt: typeof import("./chain/hedera.ts").publishReceipt;
   newRefundTxId: typeof import("./chain/hedera.ts").newRefundTxId;
   txExists: typeof import("./chain/mirror.ts").txExists;
+  scheduleExecution: typeof import("./chain/mirror.ts").scheduleExecution;
   createReputation: typeof import("./chain/arkiv.ts").createReputation;
   updateReputation: typeof import("./chain/arkiv.ts").updateReputation;
 };
@@ -60,6 +62,7 @@ async function loadChain(): Promise<Chain> {
     publishReceipt: h.publishReceipt,
     newRefundTxId: h.newRefundTxId,
     txExists: m.txExists,
+    scheduleExecution: m.scheduleExecution,
     createReputation: a?.createReputation ?? (async () => { throw new Error("arkiv_disabled"); }),
     updateReputation: a?.updateReputation ?? (async () => { throw new Error("arkiv_disabled"); }),
   };
@@ -161,7 +164,40 @@ async function runArkiv(db: Db, job: Job, c: Chain) {
   }
 }
 
-export async function runDueJobs(db: Db, log = console) {
+/**
+ * A subscription run whose time has come: once the mirror node shows the Scheduled Transaction executed,
+ * that transfer is the agent's settlement and the protected call runs exactly as for a live x402 call.
+ * Policy is checked again first; a failed check means a full refund (case C), since the money already moved.
+ */
+async function runSubscription(db: Db, job: Job, c: Chain, deps: PipelineDeps | null) {
+  const run = db.select().from(subscriptionRuns).where(eq(subscriptionRuns.scheduleId, String(job.payload.scheduleId))).get();
+  if (!run || run.status !== "scheduled") return;
+  const exec = await c.scheduleExecution(run.scheduleId);
+  if (exec === null) throw new Error("schedule not executed yet");
+  if (exec === "expired") {
+    db.update(subscriptionRuns).set({ status: "failed", error: "the network did not execute this run (wallet could not pay?)" }).where(eq(subscriptionRuns.scheduleId, run.scheduleId)).run();
+    return;
+  }
+  if (!deps) throw new Error("pipeline unavailable");
+  const sub = db.select().from(subscriptions).where(eq(subscriptions.id, run.subscriptionId)).get()!;
+  const agent = db.select().from(agents).where(eq(agents.id, sub.agentId)).get()!;
+  const merchant = db.select().from(merchants).where(eq(merchants.id, sub.merchantId)).get()!;
+  const { unseal } = await import("./custody.ts");
+  const policy = checkPolicy(db, { apiKey: unseal(agent.custodialEnc!).apiKey, slug: merchant.slug, skipApproval: true });
+  let blockedReason: string | undefined;
+  if (!policy.ok) blockedReason = `subscription run blocked: ${policy.code}`;
+  // ponytail: a price change refunds the current price + fee, not what was paid; freeze prices per subscription if this matters.
+  else if (totalFor(merchant.price) !== sub.amount) blockedReason = "merchant price changed since the subscription was created";
+  const { runProtectedCall } = await import("./pipeline.ts");
+  const r = await runProtectedCall(deps, {
+    agent, merchant, fee: feeFor(merchant.price), approvalId: null,
+    settlement: { transaction: exec, payer: agent.hederaAccountId }, body: sub.body, blockedReason,
+  });
+  db.update(subscriptionRuns).set({ status: "done", paymentId: (r.body.paymentId as string | undefined) ?? null, error: r.status === 409 ? "settlement_reused" : null })
+    .where(eq(subscriptionRuns.scheduleId, run.scheduleId)).run();
+}
+
+export async function runDueJobs(db: Db, log = console, deps: PipelineDeps | null = null) {
   const due = db.select().from(jobs).where(and(isNull(jobs.doneAt), lte(jobs.nextRunAt, Date.now()))).limit(20).all();
   if (due.length === 0) return;
   const c = await loadChain();
@@ -169,6 +205,7 @@ export async function runDueJobs(db: Db, log = console) {
     try {
       if (job.kind === "refund") await runRefund(db, job, c);
       else if (job.kind === "hcs") await runHcs(db, job, c);
+      else if (job.kind === "subscription") await runSubscription(db, job, c, deps);
       else await runArkiv(db, job, c);
       db.update(jobs).set({ doneAt: Date.now(), lastError: null }).where(eq(jobs.id, job.id)).run();
     } catch (err) {
@@ -200,12 +237,12 @@ export function recoverStuckPayments(db: Db) {
   return stale.length;
 }
 
-export function startWorker(db: Db, intervalMs = 1000) {
+export function startWorker(db: Db, intervalMs = 1000, deps: PipelineDeps | null = null) {
   let running = false;
   const timer = setInterval(async () => {
     if (running) return;
     running = true;
-    try { await runDueJobs(db); } catch (e) { console.error("[worker]", e); } finally { running = false; }
+    try { await runDueJobs(db, console, deps); } catch (e) { console.error("[worker]", e); } finally { running = false; }
   }, intervalMs);
   return () => clearInterval(timer);
 }

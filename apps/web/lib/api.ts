@@ -25,6 +25,13 @@ export const get = <T,>(path: string) => api<T>(path);
 export const post = <T,>(path: string, data?: unknown) => api<T>(path, { method: "POST", body: data === undefined ? undefined : JSON.stringify(data) });
 export const patch = <T,>(path: string, data: unknown) => api<T>(path, { method: "PATCH", body: JSON.stringify(data) });
 export const put = <T,>(path: string, data: unknown) => api<T>(path, { method: "PUT", body: JSON.stringify(data) });
+export const del = <T,>(path: string) => api<T>(path, { method: "DELETE" });
+
+export type SubscriptionRow = {
+  id: string; agentId: string; merchantId: string; merchantName: string; merchantSlug: string; amount: number; everySec: number; body: string;
+  status: "active" | "cancelled"; createdAt: number;
+  runs: { scheduleId: string; n: number; executeAt: number; status: "scheduled" | "done" | "failed" | "cancelled"; paymentId: string | null; error: string | null; paymentStatus: string | null }[];
+};
 
 export const HASHSCAN = process.env.NEXT_PUBLIC_HASHSCAN_URL ?? "https://hashscan.io/testnet";
 export const USDC_ID = process.env.NEXT_PUBLIC_USDC_TOKEN_ID ?? "0.0.429274";

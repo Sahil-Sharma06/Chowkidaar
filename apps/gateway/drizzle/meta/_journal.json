@@ -50,6 +50,13 @@
       "when": 1794001865306,
       "tag": "0006_allowlist_daily_cap",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794002726311,
+      "tag": "0007_subscriptions",
+      "breakpoints": true
     }
   ]
 }

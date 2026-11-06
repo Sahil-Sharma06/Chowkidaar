@@ -160,9 +160,35 @@ export const fundingSchedules = sqliteTable("funding_schedules", {
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [index("idx_funding_agent").on(t.agentId)]);
 
+/**
+ * Subscription-style payments: the agent pre-signs one Scheduled Transaction per run (agent -> gateway,
+ * price + fee). When the network executes a run, the worker performs the protected call for it.
+ */
+export const subscriptions = sqliteTable("subscriptions", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id").notNull().references(() => agents.id),
+  merchantId: text("merchant_id").notNull().references(() => merchants.id),
+  amount: integer("amount").notNull(), // price + fee per run, fixed at creation
+  everySec: integer("every_sec").notNull(),
+  body: text("body").notNull(), // JSON request body sent to the merchant on each run
+  status: text("status", { enum: ["active", "cancelled"] }).notNull().default("active"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [index("idx_subscriptions_agent").on(t.agentId)]);
+
+export const subscriptionRuns = sqliteTable("subscription_runs", {
+  scheduleId: text("schedule_id").primaryKey(), // Hedera schedule entity 0.0.x
+  subscriptionId: text("subscription_id").notNull().references(() => subscriptions.id),
+  n: integer("n").notNull(),
+  executeAt: integer("execute_at").notNull(),
+  // scheduled: waiting on-chain. done: the protected call ran (see paymentId). failed: never executed, e.g. wallet empty.
+  status: text("status", { enum: ["scheduled", "done", "failed", "cancelled"] }).notNull().default("scheduled"),
+  paymentId: text("payment_id"),
+  error: text("error"),
+}, (t) => [index("idx_runs_subscription").on(t.subscriptionId)]);
+
 export const jobs = sqliteTable("jobs", {
   id: text("id").primaryKey(),
-  kind: text("kind", { enum: ["refund", "hcs", "arkiv"] }).notNull(),
+  kind: text("kind", { enum: ["refund", "hcs", "arkiv", "subscription"] }).notNull(),
   payload: text("payload", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
   attempts: integer("attempts").notNull().default(0),
   nextRunAt: integer("next_run_at").notNull(),

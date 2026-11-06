@@ -28,7 +28,7 @@ Agent ── x402 (price + 2% fee, upfront) ──▶ Gateway ── x402 (price
 
 Spending controls before any money moves: per-call cap, daily cap, merchant allowlist, per-merchant daily limit, minimum merchant score, bond coverage, and owner approval above a threshold.
 
-Every agent has an **HCS-14 Universal Agent ID** (`uaid:aid:…;registry=chowkidaar;proto=x402;nativeId=hedera:testnet:0.0.x`), deterministic from its name and Hedera account, announced on the HCS topic and stamped on every receipt, so spending history has an on-Hedera subject. Owners can fund an agent on a schedule with **Hedera Scheduled Transactions**: each top-up is created up front with `waitForExpiry` and the network executes it at its time, gateway up or down.
+Every agent has an **HCS-14 Universal Agent ID** (`uaid:aid:…;registry=chowkidaar;proto=x402;nativeId=hedera:testnet:0.0.x`), deterministic from its name and Hedera account, announced on the HCS topic and stamped on every receipt, so spending history has an on-Hedera subject. **Subscriptions** are recurring protected calls paid through **Hedera Scheduled Transactions**: the agent pre-signs one scheduled payment per run (agent → gateway, price + fee, `waitForExpiry`), the network moves the money at each time, and the gateway then performs the protected call for it, same checks, same refund from the bond if the merchant fails. Owners can also fund an agent on a schedule the same way.
 
 ## Stack
 
