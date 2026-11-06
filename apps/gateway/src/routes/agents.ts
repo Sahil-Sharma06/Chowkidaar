@@ -1,12 +1,14 @@
 import { Hono, type Context } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
-import { allowlistSchema, createAgentSchema, patchAgentSchema } from "@app/shared";
+import { allowlistSchema, applyGatewayReply, askSchema, createAgentSchema, patchAgentSchema, playSchema, PIPELINE_STEPS, type DemoRunResult } from "@app/shared";
 import type { Db } from "../db/index.ts";
 import { schema } from "../db/index.ts";
+import { env } from "../env.ts";
 import { newApiKey, newId, sha256 } from "../ids.ts";
 import { consumeStepUp, requireRole, stepUpRequired, type Session } from "../auth.ts";
 import { hasAgentPass } from "../chain/agentpass.ts";
+import { lockFor, totalFor } from "../money.ts";
 import { todaySpend } from "../policy.ts";
 import { buildReceipt } from "../receipt.ts";
 import { toPublicMerchant } from "./public.ts";
@@ -33,10 +35,10 @@ export function agentRoutes(db: Db) {
     db.select().from(agents).where(and(eq(agents.id, id), eq(agents.ownerId, c.get("session").sub))).get();
 
   const publicAgent = (a: typeof agents.$inferSelect) => {
-    const { apiKeyHash: _h, ...rest } = a;
+    const { apiKeyHash: _h, custodialEnc, ...rest } = a;
     const allowed = db.select({ id: allowedMerchants.merchantId }).from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all();
     const last = db.select({ t: payments.createdAt }).from(payments).where(eq(payments.agentId, a.id)).orderBy(desc(payments.createdAt)).limit(1).get();
-    return { ...rest, spentToday: todaySpend(db, a.id), allowedMerchantIds: allowed.map((x) => x.id), lastPaymentAt: last?.t ?? null };
+    return { ...rest, custodial: Boolean(custodialEnc), spentToday: todaySpend(db, a.id), allowedMerchantIds: allowed.map((x) => x.id), lastPaymentAt: last?.t ?? null };
   };
 
   app.get("/agents", (c) => {
@@ -44,17 +46,117 @@ export function agentRoutes(db: Db) {
     return c.json(rows.map(publicAgent));
   });
 
-  app.post("/agents", zValidator("json", createAgentSchema), (c) => {
+  app.post("/agents", zValidator("json", createAgentSchema), async (c) => {
     const body = c.req.valid("json");
     const apiKey = newApiKey();
     const id = newId("agt");
+    let hederaAccountId = body.hederaAccountId;
+    let custodialEnc: string | null = null;
+    if (!hederaAccountId) {
+      // No account given: create a custodial testnet wallet so the owner can pay from the playground.
+      try {
+        const { createAgentWallet, seal } = await import("../custody.ts");
+        const w = await createAgentWallet(body.name);
+        hederaAccountId = w.accountId;
+        custodialEnc = seal({ walletKey: w.walletKey, apiKey });
+      } catch (err) {
+        return c.json({ error: "wallet_create_failed", detail: String(err) }, 502);
+      }
+    }
     try {
-      db.insert(agents).values({ id, ownerId: c.get("session").sub, apiKeyHash: sha256(apiKey), ...body }).run();
+      db.insert(agents).values({ id, ownerId: c.get("session").sub, apiKeyHash: sha256(apiKey), ...body, hederaAccountId, custodialEnc }).run();
     } catch (err) {
       return c.json({ error: "hedera_account_in_use", detail: String(err) }, 409);
     }
     const a = db.select().from(agents).where(eq(agents.id, id)).get()!;
     return c.json({ ...publicAgent(a), apiKey }, 201); // key shown once
+  });
+
+  /** Demo mode: top up a custodial wallet with 0.5 testnet USDC from the gateway. */
+  app.post("/agents/:id/fund", async (c) => {
+    const a = ownAgent(c, c.req.param("id"));
+    if (!a) return c.json({ error: "not_found" }, 404);
+    if (!env.demoMode) return c.json({ error: "not_in_demo_mode" }, 403);
+    if (!a.custodialEnc) return c.json({ error: "not_custodial" }, 400);
+    try {
+      const { fundAgent } = await import("../custody.ts");
+      const amount = 500_000;
+      return c.json({ amount, ...(await fundAgent(a.hederaAccountId, amount)) });
+    } catch (err) {
+      return c.json({ error: "fund_failed", detail: String(err) }, 502);
+    }
+  });
+
+  /**
+   * Console: the owner asks for something; the agent chooses the merchant itself (allowed, covered,
+   * within the per-call cap, best Arkiv score first) and pays for real. The reply carries the data,
+   * or exactly why nothing was delivered, so the UI can say it in plain words.
+   */
+  app.post("/agents/:id/ask", zValidator("json", askSchema), async (c) => {
+    const a = ownAgent(c, c.req.param("id"));
+    if (!a) return c.json({ error: "not_found" }, 404);
+    if (!a.custodialEnc) return c.json({ error: "not_custodial" }, 400);
+    const { query, approvalId, slug: pinned } = c.req.valid("json");
+
+    // Reputation as the public record on Arkiv says it; the gateway's own numbers only if Arkiv is down.
+    const scores = new Map<string, number>();
+    let scoreSource: "arkiv" | "gateway" = "gateway";
+    try {
+      const { cachedReputations } = await import("../chain/arkiv.ts");
+      // Same rule as the policy check: a merchant with fewer than 5 calls is "new", not scored.
+      for (const r of await cachedReputations()) if (r.totalCalls >= 5) scores.set(r.merchantId, r.score);
+      scoreSource = "arkiv";
+    } catch { /* fall back to local scores */ }
+
+    const allowedIds = new Set(db.select({ id: allowedMerchants.merchantId }).from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all().map((x) => x.id));
+    const candidates = db.select().from(merchants).where(eq(merchants.status, "live")).all().map((m) => {
+      const score = scoreSource === "arkiv" ? scores.get(m.id) ?? null : m.score;
+      const why: string[] = [];
+      if (a.allowlistOnly && !allowedIds.has(m.id)) why.push("not_allowed");
+      if (m.bondBalance - m.bondLocked < lockFor(m.price)) why.push("not_covered");
+      if (m.price > a.perCallCap) why.push("above_cap");
+      if (score !== null && score < a.minScore) why.push("low_score");
+      return { id: m.id, slug: m.slug, name: m.name, price: String(m.price), total: String(totalFor(m.price)), score, eligible: why.length === 0, why };
+    }).sort((x, y) => (y.score ?? 50) - (x.score ?? 50) || Number(x.price) - Number(y.price));
+
+    const chosen = pinned ? candidates.find((m) => m.slug === pinned) : candidates.find((m) => m.eligible);
+    if (!chosen) return c.json({ outcome: "no_merchant", scoreSource, candidates, merchant: null, status: null, body: null, agentTx: null });
+
+    try {
+      const { payAsAgent, unseal } = await import("../custody.ts");
+      const { walletKey, apiKey } = unseal(a.custodialEnc);
+      const r = await payAsAgent({ accountId: a.hederaAccountId, walletKey, apiKey, slug: chosen.slug, body: { query }, approvalId });
+      const outcome = r.status === 200 ? "delivered" : r.status === 502 ? "refund_pending" : r.status === 202 ? "held" : r.status === 401 || r.status === 403 ? "blocked" : "error";
+      return c.json({ outcome, scoreSource, candidates, merchant: chosen, status: r.status, body: r.body, agentTx: r.agentTx });
+    } catch (err) {
+      return c.json({ outcome: "error", scoreSource, candidates, merchant: chosen, status: null, body: null, agentTx: null, error: String((err as Error).message ?? err).slice(0, 300) });
+    }
+  });
+
+  /** Playground: the custodial agent makes one real paid call through /v1/call and reports each step. */
+  app.post("/agents/:id/play", zValidator("json", playSchema), async (c) => {
+    const a = ownAgent(c, c.req.param("id"));
+    if (!a) return c.json({ error: "not_found" }, 404);
+    if (!a.custodialEnc) return c.json({ error: "not_custodial" }, 400);
+    const { slug, body, approvalId } = c.req.valid("json");
+    const m = db.select().from(merchants).where(eq(merchants.slug, slug)).get();
+    if (!m) return c.json({ error: "merchant_not_found" }, 404);
+
+    const steps = PIPELINE_STEPS();
+    const result: DemoRunResult = { scenario: slug, outcome: "error", paymentId: null, steps, gatewayStatus: null, gatewayResponse: null };
+    try {
+      const { payAsAgent, unseal } = await import("../custody.ts");
+      const { walletKey, apiKey } = unseal(a.custodialEnc);
+      const r = await payAsAgent({ accountId: a.hederaAccountId, walletKey, apiKey, slug, body, approvalId });
+      result.gatewayStatus = r.status;
+      result.gatewayResponse = r.body;
+      Object.assign(result, applyGatewayReply(steps, { ...r, price: m.price, total: totalFor(m.price), hashscan: env.hashscan }));
+    } catch (err) {
+      const msg = String((err as Error).message ?? err);
+      Object.assign(steps[0]!, { state: "failed", detail: msg.slice(0, 200) });
+      result.error = msg;
+    }
+    return c.json(result);
   });
 
   app.get("/agents/:id", (c) => {
@@ -79,12 +181,17 @@ export function agentRoutes(db: Db) {
   });
 
   /** Replaces the agent's API key. The old key stops working at once; the new one is shown once. */
-  app.post("/agents/:id/rotate-key", (c) => {
+  app.post("/agents/:id/rotate-key", async (c) => {
     const a = ownAgent(c, c.req.param("id"));
     if (!a) return c.json({ error: "not_found" }, 404);
     if (!consumeStepUp(db, c.get("session"), `agent:${a.id}:key`)) return stepUpRequired(c, `agent:${a.id}:key`);
     const apiKey = newApiKey();
-    db.update(agents).set({ apiKeyHash: sha256(apiKey) }).where(eq(agents.id, a.id)).run();
+    let custodialEnc = a.custodialEnc;
+    if (custodialEnc) {
+      const { seal, unseal } = await import("../custody.ts");
+      custodialEnc = seal({ ...unseal(custodialEnc), apiKey }); // the custodial agent must keep paying with the new key
+    }
+    db.update(agents).set({ apiKeyHash: sha256(apiKey), custodialEnc }).where(eq(agents.id, a.id)).run();
     return c.json({ ...publicAgent(db.select().from(agents).where(eq(agents.id, a.id)).get()!), apiKey });
   });
 

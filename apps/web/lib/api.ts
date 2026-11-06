@@ -28,6 +28,7 @@ export const put = <T,>(path: string, data: unknown) => api<T>(path, { method: "
 export const HASHSCAN = process.env.NEXT_PUBLIC_HASHSCAN_URL ?? "https://hashscan.io/testnet";
 export const USDC_ID = process.env.NEXT_PUBLIC_USDC_TOKEN_ID ?? "0.0.429274";
 export const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL ?? "http://localhost:4000";
+export const MIRROR_URL = process.env.NEXT_PUBLIC_MIRROR_URL ?? "https://testnet.mirrornode.hedera.com";
 
 export type Role = "owner" | "merchant";
 export type Me = {
@@ -67,7 +68,7 @@ export type Config = {
   features: { world: boolean; arkiv: boolean; hcs: boolean; demoMode: boolean }; feeBps: number; penaltyBps: number;
 };
 export type AgentRow = {
-  id: string; name: string; hederaAccountId: string; perCallCap: number; dailyCap: number; approvalThreshold: number; minScore: number;
+  id: string; name: string; hederaAccountId: string; custodial: boolean; perCallCap: number; dailyCap: number; approvalThreshold: number; minScore: number;
   allowlistOnly: boolean; status: "active" | "paused"; createdAt: number; spentToday: number; allowedMerchantIds: string[]; lastPaymentAt: number | null; apiKey?: string;
 };
 export type ApprovalRow = {

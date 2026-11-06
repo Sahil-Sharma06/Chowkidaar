@@ -1,0 +1,1 @@
+ALTER TABLE `agents` ADD `custodial_enc` text;

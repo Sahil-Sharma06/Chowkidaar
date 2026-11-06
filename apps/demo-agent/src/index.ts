@@ -9,7 +9,7 @@ import { x402Client } from "@x402/core/client";
 import { wrapFetchWithPayment, decodePaymentResponseHeader } from "@x402/fetch";
 import { ExactHederaScheme } from "@x402/hedera/exact/client";
 import { createClientHederaSigner, PrivateKey } from "@x402/hedera";
-import { DEMO_SCENARIOS, formatUsdc, hashscanTx, type DemoRunResult, type DemoStep } from "@app/shared";
+import { DEMO_SCENARIOS, PIPELINE_STEPS, applyGatewayReply, formatUsdc, type DemoRunResult, type DemoStep } from "@app/shared";
 
 const env = {
   network: (process.env.HEDERA_NETWORK || "hedera:testnet") as "hedera:testnet" | "hedera:mainnet",
@@ -91,12 +91,7 @@ app.post("/run", async (c) => {
 
   const steps: DemoStep[] = [
     { key: "reputation", label: "Checked merchant reputation on Arkiv", state: "running" },
-    { key: "policy", label: "Checked spending limits", state: "pending" },
-    { key: "agent_pay", label: "Agent paid the gateway", state: "pending" },
-    { key: "merchant_pay", label: "Gateway paid the merchant and called it", state: "pending" },
-    { key: "checks", label: "Response checked", state: "pending" },
-    { key: "outcome", label: "Outcome", state: "pending" },
-    { key: "hcs", label: "Receipt written to HCS", state: "pending" },
+    ...PIPELINE_STEPS().map((s) => ({ ...s, state: "pending" as const })),
   ];
   const set = (key: string, patch: Partial<DemoStep>) => Object.assign(steps.find((s) => s.key === key)!, patch);
   const result: DemoRunResult = { scenario: scenario!, outcome: "error", paymentId: null, steps, gatewayStatus: null, gatewayResponse: null };
@@ -129,44 +124,10 @@ app.post("/run", async (c) => {
   const body = await res.json().catch(() => null) as Record<string, unknown> | null;
   result.gatewayResponse = body;
 
-  if (res.status === 202) {
-    set("policy", { state: "failed", detail: `Held: owner approval required (approval ${String(body?.approvalId)}). Approve it with World ID in the owner dashboard, then run again.` });
-    for (const k of ["agent_pay", "merchant_pay", "checks", "outcome", "hcs"]) set(k, { state: "skipped" });
-    result.outcome = "blocked";
-    return c.json(result, 200);
-  }
-  if (res.status === 401 || res.status === 403) {
-    set("policy", { state: "failed", detail: `Blocked before payment: ${String(body?.error)}` });
-    for (const k of ["agent_pay", "merchant_pay", "checks", "outcome", "hcs"]) set(k, { state: "skipped" });
-    result.outcome = "blocked";
-    return c.json(result, 200);
-  }
-  set("policy", { state: "done", detail: `Allowed: ${formatUsdc(info.total)} (price ${formatUsdc(info.price)} + fee)` });
-
   const header = res.headers.get("payment-response") ?? res.headers.get("x-payment-response");
   let agentTx: string | null = null;
   if (header) { try { agentTx = decodePaymentResponseHeader(header).transaction ?? null; } catch { /* */ } }
-  set("agent_pay", agentTx
-    ? { state: "done", detail: `Paid ${formatUsdc(info.total)} to the gateway`, link: hashscanTx(agentTx, env.hashscan) }
-    : { state: res.status === 200 || res.status === 502 ? "done" : "failed", detail: "Settled (tx id on receipt)" });
-
-  result.paymentId = (body?.paymentId as string) ?? null;
-  if (res.status === 200) {
-    set("merchant_pay", { state: "done", detail: `Gateway paid ${formatUsdc(info.price)}` });
-    set("checks", { state: "done", detail: "Status, body, format and schema all passed" });
-    set("outcome", { state: "done", detail: "Delivered" });
-    result.outcome = "delivered";
-  } else if (res.status === 502) {
-    const fc = body?.faultCase as string | undefined;
-    set("merchant_pay", fc === "B" ? { state: "done", detail: "Merchant failed before settling: it was never paid" } : fc === "C" ? { state: "failed", detail: "Gateway error (our fault)" } : { state: "done", detail: `Gateway paid ${formatUsdc(info.price)}` });
-    set("checks", { state: "failed", detail: `Failed: ${String(body?.reason)}${body?.detail ? ` (${String(body.detail)})` : ""}` });
-    set("outcome", { state: "running", detail: `Refund of ${formatUsdc(String(body?.refundAmount ?? "0"))} in progress${fc === "A" ? ", merchant bond will be slashed" : ""}` });
-    result.outcome = "refund_pending";
-  } else {
-    set("merchant_pay", { state: "failed", detail: `Gateway returned ${res.status}` });
-    result.error = JSON.stringify(body);
-  }
-  set("hcs", { state: "pending", detail: "Pending (worker)" });
+  Object.assign(result, applyGatewayReply(steps, { status: res.status, body, agentTx, price: info.price, total: info.total, hashscan: env.hashscan }));
   return c.json(result, 200);
 });
 

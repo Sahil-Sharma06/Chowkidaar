@@ -8,6 +8,7 @@ import type { PublicMerchant, Receipt } from "@app/shared";
 import { ApiError, get, isStepUp, patch, post, put, startStepUp, takePendingStepUp, type AgentRow } from "@/lib/api";
 import { Alert, Badge, Field, Money, StatusBadge, fmtTime, microFromInput, usdcInput } from "@/lib/ui";
 import { reasonText } from "@/lib/world";
+import { WalletPanel } from "@/components/WalletPanel";
 
 const ERRORS: Record<string, string> = {
   daily_cap_below_per_call: "The daily cap must be at least the per-call cap.",
@@ -70,8 +71,13 @@ function AgentDetail() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div><h1 className="text-2xl font-semibold">{a.name}</h1><div className="text-xs text-slate-500">{a.hederaAccountId}</div></div>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={a.status === "paused"} onChange={(e) => update.mutate({ status: e.target.checked ? "paused" : "active" })} /> Paused (blocks all new payments)</label>
+        <div className="flex items-center gap-4">
+          {a.custodial && <Link href="/console" className="btn-primary">Open console</Link>}
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={a.status === "paused"} onChange={(e) => update.mutate({ status: e.target.checked ? "paused" : "active" })} /> Paused (blocks all new payments)</label>
+        </div>
       </div>
+
+      <WalletPanel agentId={a.id} accountId={a.hederaAccountId} custodial={a.custodial} />
 
       {stepup === "denied" && <Alert tone="red">{reasonText(params.get("reason"))} Your change was not saved.</Alert>}
       <Alert tone="blue"><ShieldCheck className="mr-1 inline h-4 w-4" />Lowering limits or pausing takes effect at once. Raising a limit, lowering the minimum score, turning off the allowlist, or replacing the API key asks you to verify with World ID first.</Alert>

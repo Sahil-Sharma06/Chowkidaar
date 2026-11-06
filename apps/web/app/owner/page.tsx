@@ -19,7 +19,10 @@ export default function OwnerDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Owner dashboard</h1><Link href="/owner/agents/new" className="btn-primary">Create agent</Link></div>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Owner dashboard</h1>
+        <div className="flex gap-2"><Link href="/console" className="btn-secondary">Open console</Link><Link href="/playground" className="btn-secondary">Playground</Link><Link href="/owner/agents/new" className="btn-primary">Create agent</Link></div>
+      </div>
       <div className="grid gap-4 sm:grid-cols-4">
         <Stat label="Spent today" value={<Money micro={spentToday} />} />
         <Stat label="Refunded today" value={<Money micro={refundedToday} />} />

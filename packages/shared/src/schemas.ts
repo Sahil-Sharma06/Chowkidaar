@@ -5,7 +5,8 @@ export const slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Lowercase le
 
 export const createAgentSchema = z.object({
   name: z.string().min(2).max(40),
-  hederaAccountId: hederaAccount,
+  // Omit it and the gateway creates a custodial testnet wallet for the agent.
+  hederaAccountId: hederaAccount.optional(),
   perCallCap: z.number().int().positive(),
   dailyCap: z.number().int().positive(),
   approvalThreshold: z.number().int().nonnegative(),
@@ -65,3 +66,17 @@ export const patchMeSchema = z.object({ displayName: z.string().trim().min(1).ma
 export const devLoginSchema = z.object({ name: z.string().trim().min(1).max(40).regex(/^[\w .-]+$/, "Letters, numbers, spaces, . _ -") });
 
 export const demoRunSchema = z.object({ scenario: z.string().min(1) });
+
+/** Console: the owner asks; the agent picks the merchant and pays. `slug` pins the merchant on a retry after approval. */
+export const askSchema = z.object({
+  query: z.string().trim().min(1).max(2000),
+  approvalId: z.string().optional(),
+  slug: slug.optional(),
+});
+
+/** Playground: the owner has a custodial agent pay a merchant for real. */
+export const playSchema = z.object({
+  slug,
+  body: z.record(z.string(), z.unknown()).optional(),
+  approvalId: z.string().optional(),
+});

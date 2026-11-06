@@ -71,6 +71,17 @@ export async function listReputations(owner: Hex): Promise<ArkivReputation[]> {
   return [...latest.values()];
 }
 
+// ponytail: one in-process cache; fine for a single gateway.
+let repCache: { at: number; list: ArkivReputation[] } | null = null;
+/** Our writer's reputation entities, re-read from Arkiv at most every `ttlMs`. */
+export async function cachedReputations(ttlMs = 30_000): Promise<ArkivReputation[]> {
+  if (!env.arkivWriterAddress) return [];
+  if (repCache && Date.now() - repCache.at < ttlMs) return repCache.list;
+  const list = await listReputations(env.arkivWriterAddress as Hex);
+  repCache = { at: Date.now(), list };
+  return list;
+}
+
 /** Arkiv returns typed attributes as `{ type, value }`; this turns one into a plain number or string. */
 export const plain = (v: unknown): string | number => {
   const x = v && typeof v === "object" && "value" in v ? (v as { value: unknown }).value : v;

@@ -52,6 +52,8 @@ export const agents = sqliteTable("agents", {
   name: text("name").notNull(),
   hederaAccountId: text("hedera_account_id").notNull().unique(),
   apiKeyHash: text("api_key_hash").notNull(),
+  // Custodial agents (playground): the gateway created the wallet and keeps its key + API key sealed here.
+  custodialEnc: text("custodial_enc"),
   perCallCap: integer("per_call_cap").notNull(),
   dailyCap: integer("daily_cap").notNull(),
   approvalThreshold: integer("approval_threshold").notNull(),
