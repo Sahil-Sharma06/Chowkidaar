@@ -1,23 +1,30 @@
 import type { Metadata } from "next";
+import { Geist, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { Nav } from "@/components/Nav";
+import { Footer } from "@/components/Footer";
+import { Shell } from "@/components/Shell";
+
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Agent Payment Protection",
-  description: "Bond-backed refunds for AI agents paying over x402 on Hedera.",
+  title: "Chowkidaar — Bond-backed refunds for AI agents paying over x402",
+  description: "The gateway between autonomous agents and paid APIs on Hedera. If a service fails, the agent is refunded from the merchant's bond.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${geist.variable} ${inter.variable} ${mono.variable}`}>
       <body>
         <Providers>
           <Nav />
-          <main className="mx-auto w-full max-w-6xl px-4 py-8">{children}</main>
-          <footer className="mx-auto max-w-6xl px-4 pb-10 text-xs text-slate-500">
-            Testnet only. The bond vault is custodial in this version. Receipts are recorded by the gateway.
-          </footer>
+          <main className="min-h-[calc(100vh-16rem)] pt-16">
+            <Shell>{children}</Shell>
+          </main>
+          <Footer />
         </Providers>
       </body>
     </html>
