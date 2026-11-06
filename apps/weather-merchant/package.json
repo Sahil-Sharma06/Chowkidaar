@@ -1,0 +1,19 @@
+{
+  "name": "@app/weather-merchant",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../../.env --watch --import tsx src/index.ts",
+    "start": "node --env-file=../../.env --import tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "4.13.16",
+    "@hono/node-server": "2.1.6",
+    "@x402/core": "2.30.0",
+    "@x402/hono": "2.30.0",
+    "@x402/hedera": "2.30.0"
+  },
+  "devDependencies": { "typescript": "5.9.3", "tsx": "4.23.15", "@types/node": "24.19.2" }
+}

@@ -8,7 +8,7 @@
     "scripts"
   ],
   "scripts": {
-    "dev": "concurrently -k -n gateway,merchants,agent,web -c blue,green,yellow,magenta \"npm run dev -w apps/gateway\" \"npm run dev -w apps/demo-merchants\" \"npm run dev -w apps/demo-agent\" \"npm run dev -w apps/web\"",
+    "dev": "concurrently -k -n gateway,merchants,skycast,agent,web -c blue,green,cyan,yellow,magenta \"npm run dev -w apps/gateway\" \"npm run dev -w apps/demo-merchants\" \"npm run dev -w apps/weather-merchant\" \"npm run dev -w apps/demo-agent\" \"npm run dev -w apps/web\"",
     "dev:backend": "concurrently -k -n gateway,merchants,agent -c blue,green,yellow \"npm run dev -w apps/gateway\" \"npm run dev -w apps/demo-merchants\" \"npm run dev -w apps/demo-agent\"",
     "setup": "npm run setup -w scripts",
     "seed": "npm run seed -w scripts",

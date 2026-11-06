@@ -93,11 +93,14 @@ console.log("Accounts");
 await ensureAccount("vault", "VAULT_ACCOUNT_ID", "VAULT_PRIVATE_KEY", 10);
 await ensureAccount("agent", "AGENT_ACCOUNT_ID", "AGENT_PRIVATE_KEY", 10);
 await ensureAccount("merchant", "MERCHANT_ACCOUNT_ID", "MERCHANT_PRIVATE_KEY", 5);
+// SkyCast (apps/weather-merchant) is paid into its own account, like an outside merchant would be.
+await ensureAccount("weather merchant", "WEATHER_ACCOUNT_ID", "WEATHER_PRIVATE_KEY", 2);
 
 console.log("\nAssociating USDC", USDC);
 await associate("gateway", e.GATEWAY_ACCOUNT_ID!, e.GATEWAY_PRIVATE_KEY!);
 await associate("vault", e.VAULT_ACCOUNT_ID!, e.VAULT_PRIVATE_KEY!);
 await associate("agent", e.AGENT_ACCOUNT_ID!, e.AGENT_PRIVATE_KEY!);
+await associate("weather merchant", e.WEATHER_ACCOUNT_ID!, e.WEATHER_PRIVATE_KEY!);
 if (e.MERCHANT_PRIVATE_KEY) await associate("merchant", e.MERCHANT_ACCOUNT_ID!, e.MERCHANT_PRIVATE_KEY);
 else console.log(`- merchant ${e.MERCHANT_ACCOUNT_ID ?? "(unset)"}: no MERCHANT_PRIVATE_KEY, make sure it is associated with USDC yourself`);
 
@@ -109,6 +112,7 @@ await balances("gateway", e.GATEWAY_ACCOUNT_ID);
 await balances("vault", e.VAULT_ACCOUNT_ID);
 await balances("agent", e.AGENT_ACCOUNT_ID);
 await balances("merchant", e.MERCHANT_ACCOUNT_ID);
+await balances("weather merchant", e.WEATHER_ACCOUNT_ID);
 
 // Write results straight into ../.env so nothing has to be copied by hand.
 const envPath = resolve(dirname(fileURLToPath(import.meta.url)), "../.env");
