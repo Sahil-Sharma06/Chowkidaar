@@ -221,7 +221,7 @@ export function LiveFeed({ receipts }: { receipts: Receipt[] }) {
 }
 
 /* ------------------------------------------------------------ quickstart */
-export function Quickstart({ gatewayUrl }: { gatewayUrl: string }) {
+export function Quickstart({ gatewayUrl, slug }: { gatewayUrl: string; slug: string }) {
   const lines: [string, string][] = [
     ["c", "// 1. Any x402 client works. This is the exact code the demo agent runs."],
     ["k", `import { x402Client } from "@x402/core/client";`],
@@ -237,7 +237,7 @@ export function Quickstart({ gatewayUrl }: { gatewayUrl: string }) {
     ["k", `const pay = wrapFetchWithPayment(fetch, client);`],
     ["", ""],
     ["c", "// 2. Call the merchant through Chowkidaar. 200 = data. 502 = refund already on its way."],
-    ["k", `const res = await pay("${gatewayUrl}/v1/call/good-data", {`],
+    ["k", `const res = await pay("${gatewayUrl}/v1/call/${slug}", {`],
     ["k", `  method: "POST", headers: { "x-agent-key": AGENT_KEY }, body: "{}",`],
     ["k", `});`],
   ];

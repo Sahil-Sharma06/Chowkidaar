@@ -136,6 +136,32 @@ No auth. Returns the public merchant record plus the exact amount the agent will
 ```
 `404 not_found`.
 
+### `GET /v1/agent` — who am I
+
+Header `x-agent-key`. The agent behind the key, its limits and allowlist, for MCP hosts and SDKs:
+```json
+{ "id": "agt_...", "name": "Claude Desktop", "hederaAccountId": "0.0.x", "custodial": true, "status": "active",
+  "perCallCap": "500000", "dailyCap": "5000000", "approvalThreshold": "250000", "minScore": 60, "allowlistOnly": true, "allowedMerchantIds": ["mer_..."], "spentToday": "102000" }
+```
+
+### `POST /v1/ask` — say what you want; the agent pays
+
+Header `x-agent-key`. **Custodial agents only** (wallet held by the gateway); agents with their own key use `/v1/call` through an x402 client. Body `{ "query": "get me a burger", "approvalId"?: "apr_...", "slug"?: "burgerbot" }`.
+
+The gateway matches the request against what merchants declared about themselves (category, keywords, name), drops any that policy would reject, ranks the rest by Arkiv score (merchants under 5 calls count as new), pays the first over x402 and returns:
+```json
+{
+  "outcome": "delivered | refund_pending | held | blocked | error | no_merchant",
+  "intent": { "words": ["burger"], "categories": ["food"] },
+  "scoreSource": "arkiv | gateway",
+  "merchant": { "slug": "burgerbot", "name": "BurgerBot Kitchen", "category": "food", "price": "100000", "total": "102000", "score": null, "matched": ["burger"], "eligible": true, "why": [] },
+  "candidates": [ { "...": "every live merchant with matched words, eligible flag and why: no_match | not_allowed | not_covered | above_cap | low_score" } ],
+  "status": 200, "body": { "...": "the raw /v1/call response (data, or paymentId/reason/refundAmount, or approvalId)" },
+  "agentTx": "0.0.x@...", "error": null, "webOrigin": "https://..."
+}
+```
+This is what the web console and the MCP server (`packages/mcp`, tool `ask`) call.
+
 ### `GET /v1/payments/{paymentId}` — status of one of your calls
 
 Header `x-agent-key`. Returns the full receipt (same shape as the public receipt, below). `401 invalid_agent_key`, `404 not_found` (not yours).

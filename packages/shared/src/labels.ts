@@ -47,16 +47,11 @@ export const DEPOSIT_ERROR_TEXT: Record<string, string> = {
   duplicate: "This deposit has already been counted.",
 };
 
-export const DEMO_SCENARIOS = [
-  { id: "good-data", label: "Good service", expect: "Delivered" },
-  { id: "server-error", label: "Server error", expect: "Refunded, bond slashed" },
-  { id: "empty-response", label: "Empty response", expect: "Refunded, bond slashed" },
-  { id: "broken-format", label: "Broken format", expect: "Refunded, bond slashed" },
-  { id: "slow-service", label: "Too slow", expect: "Refunded after timeout" },
-  { id: "honest-error", label: "Honest failure", expect: "Refunded, no slash" },
-  { id: "wrong-value", label: "Valid but wrong data", expect: "Delivered (known limit)" },
-  { id: "over-limit", label: "Over the limit", expect: "Blocked before payment" },
-  { id: "needs-approval", label: "Needs owner approval", expect: "Held until a human approves (World ID)" },
-] as const;
-
-export type ScenarioId = (typeof DEMO_SCENARIOS)[number]["id"];
+/** Plain-language reasons a merchant was not chosen for a request. */
+export const SKIP_REASON: Record<string, string> = {
+  not_allowed: "not on the agent's allowlist",
+  not_covered: "bond too low to cover a call",
+  above_cap: "price above the per-call cap",
+  low_score: "score below the agent's minimum",
+  no_match: "doesn't sell what was asked for",
+};

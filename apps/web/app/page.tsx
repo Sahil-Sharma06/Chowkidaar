@@ -45,7 +45,8 @@ export default function Landing() {
   const c = cfg.data;
   const feeBps = c?.feeBps ?? 200;
   const penaltyBps = c?.penaltyBps ?? 2000;
-  const good = merchants.data?.find((m) => m.slug === "good-data") ?? merchants.data?.[0];
+  // The merchant we feature: the best-rated one whose bond covers a call right now.
+  const good = [...(merchants.data ?? [])].sort((x, y) => Number(y.covered) - Number(x.covered) || (y.score ?? -1) - (x.score ?? -1))[0];
   const price = Number(good?.price ?? 100_000);
   const fee = Math.floor((price * feeBps) / 10_000);
   const penalty = Math.floor((price * penaltyBps) / 10_000);
@@ -54,7 +55,7 @@ export default function Landing() {
 
   return (
     <div className="flex w-full flex-col">
-      <Hero gatewayUrl={GATEWAY_URL} slug={good?.slug ?? "good-data"} />
+      <Hero gatewayUrl={GATEWAY_URL} slug={good?.slug ?? "<merchant>"} />
 
       <section className="relative z-10 mx-auto w-full max-w-7xl px-6 pb-20 lg:px-12">
         <Topology cfg={c} good={good} agent={agent.data} price={price} fee={fee} penalty={penalty} penaltyBps={penaltyBps} latest={latest} />
@@ -80,7 +81,7 @@ export default function Landing() {
       <Comparison price={price} fee={fee} penalty={penalty} penaltyBps={penaltyBps} />
       <Roles good={good} />
       <LiveFeed receipts={receipts.data ?? []} />
-      <Quickstart gatewayUrl={GATEWAY_URL} />
+      <Quickstart gatewayUrl={GATEWAY_URL} slug={good?.slug ?? "<merchant>"} />
 
       {/* CTA */}
       <section className="w-full bg-surface-container-low/70 py-16">

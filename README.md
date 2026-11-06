@@ -88,6 +88,17 @@ Open http://localhost:3000/demo.
 
 Settled Hedera transactions of real paid requests: agent → gateway settlement [`0.0.7162784-1793909332-800301584`](https://hashscan.io/testnet/transaction/0.0.7162784-1793909332-800301584), three-party refund with bond slash [`0.0.6825454-1793909547-261933222`](https://hashscan.io/testnet/transaction/0.0.6825454-1793909547-261933222), receipts on HCS topic [`0.0.11329161`](https://hashscan.io/testnet/topic/0.0.11329161).
 
+## Use it from Claude, ChatGPT or Cursor (MCP)
+
+`packages/mcp` is an MCP server with four tools: `ask` (pay the best bonded merchant for what the user wants), `list_merchants`, `wallet`, `get_receipt`. It talks to the gateway with an agent's API key, so the assistant can spend only inside the limits the owner set in the web app, and refunds work exactly as in the console. The agent page shows a ready-made config; it looks like:
+
+```json
+{ "mcpServers": { "chowkidaar": { "command": "npx", "args": ["-y", "tsx", "<repo>/packages/mcp/src/index.ts"],
+  "env": { "CHOWKIDAAR_URL": "http://localhost:4000", "CHOWKIDAAR_AGENT_KEY": "apk_..." } } } }
+```
+
+Try it without a host: `CHOWKIDAAR_AGENT_KEY=apk_... node packages/mcp/smoke.mjs "get me a burger"`.
+
 ## API
 
 Full reference, with request/response shapes, error codes and a client example: **[docs/API.md](docs/API.md)**.

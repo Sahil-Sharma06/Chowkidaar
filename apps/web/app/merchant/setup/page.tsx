@@ -2,6 +2,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { PublicMerchant } from "@app/shared";
 import { ApiError, get, patch, post, type MerchantMe } from "@/lib/api";
 import { Alert, Badge, Field, cx, microFromInput, usdcInput } from "@/lib/ui";
 import { BondPanel } from "@/components/BondPanel";
@@ -14,7 +15,10 @@ export default function MerchantSetup() {
   const me = useQuery({ queryKey: ["merchant-me"], queryFn: () => get<MerchantMe>("/api/merchants/me"), retry: false });
   const exists = Boolean(me.data);
   const [step, setStep] = useState(0);
-  const [f, setF] = useState({ name: "", slug: "", endpointUrl: "", payoutAccountId: "", price: "0.10", timeoutMs: "10" });
+  const [f, setF] = useState({ name: "", slug: "", endpointUrl: "", payoutAccountId: "", price: "0.10", timeoutMs: "10", category: "", keywords: "", description: "", samplePrompt: "" });
+  // Categories already in use, so merchants converge on the same words without a fixed list.
+  const catalog = useQuery({ queryKey: ["public-merchants"], queryFn: () => get<PublicMerchant[]>("/api/public/merchants"), staleTime: 60_000 });
+  const knownCategories = [...new Set((catalog.data ?? []).map((m) => m.category))];
   const [schema, setSchema] = useState(EXAMPLE_SCHEMA);
   const [error, setError] = useState<string | null>(null);
   const [test, setTest] = useState<{ passed: boolean; checks: Record<string, boolean>; detail: string | null } | null>(null);
@@ -22,13 +26,17 @@ export default function MerchantSetup() {
   useEffect(() => {
     if (me.data) {
       const m = me.data;
-      setF({ name: m.name, slug: m.slug, endpointUrl: m.endpointUrl, payoutAccountId: m.payoutAccountId, price: usdcInput(m.price), timeoutMs: String(m.timeoutMs / 1000) });
+      setF({ name: m.name, slug: m.slug, endpointUrl: m.endpointUrl, payoutAccountId: m.payoutAccountId, price: usdcInput(m.price), timeoutMs: String(m.timeoutMs / 1000), category: m.category, keywords: m.keywords.join(", "), description: m.description ?? "", samplePrompt: m.samplePrompt ?? "" });
       setSchema(JSON.stringify(m.responseSchema, null, 2));
       if (m.status === "needs_bond" || m.status === "live") setStep(3);
     }
   }, [me.data]);
 
-  const body = () => ({ name: f.name, slug: f.slug, endpointUrl: f.endpointUrl, payoutAccountId: f.payoutAccountId, price: microFromInput(f.price), timeoutMs: Math.round(Number(f.timeoutMs) * 1000), responseSchema: JSON.parse(schema) });
+  const body = () => ({
+    name: f.name, slug: f.slug, endpointUrl: f.endpointUrl, payoutAccountId: f.payoutAccountId, price: microFromInput(f.price), timeoutMs: Math.round(Number(f.timeoutMs) * 1000), responseSchema: JSON.parse(schema),
+    category: f.category.trim().toLowerCase() || "other", keywords: f.keywords.split(/[,\n]/).map((k) => k.trim().toLowerCase()).filter(Boolean),
+    description: f.description.trim() || undefined, samplePrompt: f.samplePrompt.trim() || undefined,
+  });
   const save = useMutation({
     mutationFn: () => exists ? patch<MerchantMe>(`/api/merchants/${me.data!.id}`, (({ slug: _s, ...rest }) => rest)(body())) : post<MerchantMe>("/api/merchants", body()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["merchant-me"] }); setError(null); setStep((s) => Math.min(s + 1, 3)); },
@@ -57,6 +65,15 @@ export default function MerchantSetup() {
             <Field label="Price (USDC)"><input className="input" value={f.price} onChange={set("price")} /></Field>
             <Field label="Timeout (seconds)" hint="1-30"><input className="input" type="number" min={1} max={30} value={f.timeoutMs} onChange={set("timeoutMs")} /></Field>
           </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Category" hint={knownCategories.length ? `In use: ${knownCategories.join(", ")}` : "One lowercase word, e.g. food"}>
+              <input className="input" list="categories" value={f.category} onChange={set("category")} placeholder="food" pattern="[a-z][a-z0-9-]{1,23}" />
+              <datalist id="categories">{knownCategories.map((c) => <option key={c} value={c} />)}</datalist>
+            </Field>
+            <Field label="Keywords" hint="Comma-separated words agents might ask for. This is how an agent finds you."><input className="input" value={f.keywords} onChange={set("keywords")} placeholder="burger, fries, lunch" /></Field>
+          </div>
+          <Field label="Description" hint="One line, shown in the catalog."><input className="input" maxLength={160} value={f.description} onChange={set("description")} placeholder="Confirms a burger order in under a minute" /></Field>
+          <Field label="Sample request" hint="An example of what someone would ask their agent; shown as a suggestion in the console."><input className="input" maxLength={120} value={f.samplePrompt} onChange={set("samplePrompt")} placeholder="Get me a burger" /></Field>
         </div>
       )}
 

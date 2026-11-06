@@ -29,23 +29,31 @@ const { accounts, agents, merchants, allowedMerchants, bondLedger } = schema;
 const newId = (p: string) => `${p}_${randomBytes(9).toString("base64url")}`;
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
-const PRICE_SCHEMA = {
-  type: "object",
-  required: ["symbol", "price"],
-  properties: { symbol: { type: "string" }, price: { type: "number" }, source: { type: "string" }, ts: { type: "number" } },
-};
+const schemaOf = (required: string[]) => ({ type: "object", required, properties: Object.fromEntries(required.map((k) => [k, {}])) });
+const FOOD = schemaOf(["orderId", "item", "eta", "status"]);
+const MUSIC = schemaOf(["track", "artist", "url"]);
+const RIDE = schemaOf(["rideId", "driver", "eta", "status"]);
+const PRICE = { type: "object", required: ["symbol", "price"], properties: { symbol: { type: "string" }, price: { type: "number" }, source: { type: "string" }, ts: { type: "number" } } };
 
+/**
+ * The demo catalog. Each entry is a real x402 seller in apps/demo-merchants that looks like an
+ * everyday service; `description` says, in plain words, how it behaves. `was` is the slug the
+ * same merchant had in an earlier seed, so re-seeding renames it in place and keeps its bond
+ * and Arkiv reputation instead of creating a duplicate.
+ */
 const DEMO = [
-  { slug: "good-data", name: "HBAR Price Feed", price, timeoutMs: 10_000 },
-  { slug: "server-error", name: "Crashy Quotes", price, timeoutMs: 10_000 },
-  { slug: "empty-response", name: "Silent Oracle", price, timeoutMs: 10_000 },
-  { slug: "broken-format", name: "HTML Not JSON Co.", price, timeoutMs: 10_000 },
-  { slug: "slow-service", name: "Sleepy Data", price, timeoutMs: 5_000 },
-  { slug: "honest-error", name: "Honest Failure API", price, timeoutMs: 10_000 },
-  { slug: "wrong-value", name: "Confidently Wrong Data", price, timeoutMs: 10_000 },
-  { slug: "premium-data", name: "Premium Price Feed", price: 600_000, timeoutMs: 10_000 },
-  { slug: "big-ticket", name: "Big Ticket Feed", price: 300_000, timeoutMs: 10_000 }, // above the approval threshold, below the cap
-];
+  { slug: "burgerbot", name: "BurgerBot Kitchen", category: "food", keywords: ["burger", "fries", "lunch", "dinner", "hungry", "meal", "order", "eat"], samplePrompt: "Get me a burger", description: "Demo kitchen that confirms your order. Expect: delivered.", price, timeoutMs: 10_000, schema: FOOD },
+  { slug: "dodgy-diner", was: "server-error", name: "Dodgy Diner", category: "food", keywords: ["burger", "pizza", "dinner", "meal", "order", "eat"], description: "Takes your money, then its kitchen crashes (HTTP 500). Expect: refund, bond slashed.", price, timeoutMs: 10_000, schema: FOOD },
+  { slug: "mystery-meals", was: "wrong-value", name: "Mystery Meals", category: "food", keywords: ["meal", "food", "order", "eat"], description: "Confirms with a well-formed but nonsense order. Expect: delivered (our known limit).", price, timeoutMs: 10_000, schema: FOOD },
+  { slug: "vip-table", was: "big-ticket", name: "VIP Table", category: "food", keywords: ["table", "reservation", "restaurant", "tasting", "date"], samplePrompt: "Book a chef's table for two tonight", description: "0.30 USDC: above the demo agent's approval threshold. Expect: held until the owner approves.", price: 300_000, timeoutMs: 10_000, schema: FOOD },
+  { slug: "streamtune", name: "StreamTune", category: "music", keywords: ["music", "song", "track", "play", "playlist", "stream", "listen"], samplePrompt: "Play me some music", description: "Demo label that streams a track. Expect: delivered.", price, timeoutMs: 10_000, schema: MUSIC },
+  { slug: "silent-dj", was: "empty-response", name: "Silent DJ", category: "music", keywords: ["music", "song", "track", "play", "listen"], description: "Takes your money and returns nothing. Expect: refund, bond slashed.", price, timeoutMs: 10_000, schema: MUSIC },
+  { slug: "lofi-radio", was: "broken-format", name: "Lo-fi Radio", category: "music", keywords: ["music", "radio", "play", "listen"], description: "Returns an HTML page instead of JSON. Expect: refund, bond slashed.", price, timeoutMs: 10_000, schema: MUSIC },
+  { slug: "quickcab", was: "slow-service", name: "QuickCab", category: "rides", keywords: ["cab", "taxi", "ride", "car", "airport", "drive", "pickup"], samplePrompt: "Book me a cab to the airport", description: "Confirms your ride after 30 seconds, past the 5 s timeout. Expect: refund after timeout.", price, timeoutMs: 5_000, schema: RIDE },
+  { slug: "honest-cab", was: "honest-error", name: "Honest Cab", category: "rides", keywords: ["cab", "taxi", "ride", "car", "drive"], description: "Fails before settling, so it is never paid. Expect: refund, no slash.", price, timeoutMs: 10_000, schema: RIDE },
+  { slug: "hbar-price", was: "good-data", name: "HBAR Price Feed", category: "data", keywords: ["hbar", "price", "quote", "market", "rate", "crypto", "hedera", "usd"], samplePrompt: "What's the HBAR price right now?", description: "Live HBAR/USD from CoinGecko. Expect: delivered.", price, timeoutMs: 10_000, schema: PRICE },
+  { slug: "premium-feed", was: "premium-data", name: "Premium Price Feed", category: "data", keywords: ["hbar", "price", "quote", "premium"], description: "Same data at 0.60 USDC: above the demo agent's per-call cap. Expect: blocked before payment.", price: 600_000, timeoutMs: 10_000, schema: PRICE },
+] as const;
 const APPROVAL_THRESHOLD = parseUsdc(e.DEMO_APPROVAL_USDC || "0.25");
 
 // Demo owner + agent --------------------------------------------------------------------
@@ -73,16 +81,20 @@ if (!agent) {
 // Merchants ------------------------------------------------------------------------------
 const ids: string[] = [];
 for (const d of DEMO) {
-  let m = db.select().from(merchants).where(eq(merchants.slug, d.slug)).get();
+  const catalog = {
+    slug: d.slug, name: d.name, endpointUrl: `${merchantsUrl}/m/${d.slug}`, payoutAccountId: payout,
+    price: d.price, timeoutMs: d.timeoutMs, responseSchema: d.schema as Record<string, unknown>,
+    category: d.category, keywords: [...d.keywords], description: d.description, samplePrompt: "samplePrompt" in d ? d.samplePrompt : null,
+  };
+  let m = db.select().from(merchants).where(eq(merchants.slug, d.slug)).get()
+    ?? ("was" in d ? db.select().from(merchants).where(eq(merchants.slug, d.was)).get() : undefined);
   if (!m) {
     const id = newId("mer");
-    db.insert(merchants).values({
-      id, slug: d.slug, name: d.name, endpointUrl: `${merchantsUrl}/m/${d.slug}`, payoutAccountId: payout,
-      price: d.price, timeoutMs: d.timeoutMs, responseSchema: PRICE_SCHEMA, status: "needs_bond",
-    }).run();
+    db.insert(merchants).values({ id, ...catalog, status: "needs_bond" }).run();
     m = db.select().from(merchants).where(eq(merchants.id, id)).get()!;
   } else {
-    db.update(merchants).set({ endpointUrl: `${merchantsUrl}/m/${d.slug}`, payoutAccountId: payout }).where(eq(merchants.id, m.id)).run();
+    if (m.slug !== d.slug) console.log(`- ${m.slug} -> ${d.slug} (renamed in place, bond and reputation kept)`);
+    db.update(merchants).set(catalog).where(eq(merchants.id, m.id)).run();
   }
   ids.push(m.id);
   db.insert(allowedMerchants).values({ agentId: agent.id, merchantId: m.id }).onConflictDoNothing().run();

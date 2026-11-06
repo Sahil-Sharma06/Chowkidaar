@@ -31,6 +31,10 @@ export const jsonSchemaObject = z.record(z.string(), z.unknown()).refine(
   { message: 'Schema must have type "object" and a non-empty "required" list' },
 );
 
+/** A merchant describes what it sells; agents match requests against these words. */
+export const category = z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9-]{1,23}$/, "Short lowercase word, e.g. food");
+export const keywords = z.array(z.string().trim().toLowerCase().min(2).max(24)).max(24);
+
 export const createMerchantSchema = z.object({
   name: z.string().min(2).max(60),
   slug,
@@ -39,6 +43,10 @@ export const createMerchantSchema = z.object({
   price: z.number().int().positive(),
   timeoutMs: z.number().int().min(1000).max(30000).default(10000),
   responseSchema: jsonSchemaObject,
+  category: category.default("other"),
+  keywords: keywords.default([]),
+  description: z.string().trim().max(160).optional(),
+  samplePrompt: z.string().trim().max(120).optional(),
 });
 
 export const patchMerchantSchema = z.object({
@@ -48,6 +56,10 @@ export const patchMerchantSchema = z.object({
   price: z.number().int().positive().optional(),
   timeoutMs: z.number().int().min(1000).max(30000).optional(),
   responseSchema: jsonSchemaObject.optional(),
+  category: category.optional(),
+  keywords: keywords.optional(),
+  description: z.string().trim().max(160).optional(),
+  samplePrompt: z.string().trim().max(120).optional(),
   status: z.enum(["paused", "live"]).optional(),
 });
 
@@ -65,7 +77,7 @@ export const enableRoleSchema = z.object({ role: roleSchema });
 export const patchMeSchema = z.object({ displayName: z.string().trim().min(1).max(40) });
 export const devLoginSchema = z.object({ name: z.string().trim().min(1).max(40).regex(/^[\w .-]+$/, "Letters, numbers, spaces, . _ -") });
 
-export const demoRunSchema = z.object({ scenario: z.string().min(1) });
+export const demoRunSchema = z.object({ scenario: slug });
 
 /** Console: the owner asks; the agent picks the merchant and pays. `slug` pins the merchant on a retry after approval. */
 export const askSchema = z.object({

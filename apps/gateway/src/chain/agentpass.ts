@@ -35,11 +35,17 @@ export type Purpose = "login" | "approval" | "stepup";
 export type AuthPayload = Record<string, string>;
 
 const STATE_TTL_MS = 10 * 60 * 1000;
-/** Verification classes we accept: Selfie Check (anyone with a phone) or Orb. Face Auth variants are stricter forms of these. */
-export const ACCEPTED_ACR = [
-  "https://world.org/oidc/acr/selfie", "https://world.org/oidc/acr/orb",
-  "https://world.org/oidc/acr/selfie-face", "https://world.org/oidc/acr/orb-face",
-];
+/**
+ * Verification classes we accept, Selfie Check first (anyone with World App, no Orb needed), then Orb;
+ * the Face Auth variants are stricter forms of these. Override with WORLD_ACCEPTED_ACR (comma-separated).
+ * The developer portal setting "Default accepted accounts" must allow the same classes (Selfie Check or Any account).
+ */
+export const ACCEPTED_ACR = (process.env.WORLD_ACCEPTED_ACR || [
+  "https://world.org/oidc/acr/selfie", "https://world.org/oidc/acr/selfie-face",
+  "https://world.org/oidc/acr/orb", "https://world.org/oidc/acr/orb-face",
+].join(",")).split(",").map((s) => s.trim()).filter(Boolean);
+/** Dev/testing only: accept tokens of accounts with no verification at all (portal setting "Any account"). */
+export const ALLOW_UNVERIFIED = process.env.WORLD_ALLOW_UNVERIFIED === "true";
 const b64url = (b: Buffer) => b.toString("base64url");
 const { oidcStates } = schema;
 
@@ -59,7 +65,10 @@ export async function startAuth(db: Db, purpose: Purpose, payload: AuthPayload =
     state, nonce, code_challenge: challenge, code_challenge_method: "S256",
   });
   // Ask explicitly for Selfie Check or Orb (alternatives: one is enough), so people without Orb access can sign in.
-  q.set("claims", JSON.stringify({ id_token: { acr: { essential: true, values: ACCEPTED_ACR } } }));
+  // Voluntary preference, Selfie Check first. An *essential* acr claim listing Orb made the IdP demand an Orb
+  // account; with acr_values the IdP offers the lowest class the app's portal settings allow, and the token's
+  // acr is checked on return. Unknown values are ignored by the IdP rather than rejected.
+  q.set("acr_values", ACCEPTED_ACR.join(" "));
   if (purpose !== "login") q.set("max_age", "0"); // step-up: a fresh verification for this action
   return `${d.authorization_endpoint}?${q}`;
 }
@@ -106,8 +115,9 @@ export async function finishAuth(db: Db, params: { code?: string; state?: string
   }
 
   if (claims.nonce !== p.nonce) throw fail("nonce_mismatch");
-  // The token must prove one of the classes we asked for; an unverified account carries no acr.
-  if (!ACCEPTED_ACR.includes(String(claims.acr ?? ""))) throw fail("verification_level_too_low", String(claims.acr ?? "none"));
+  // The token must prove one of the classes we accept; an unverified account carries no acr.
+  const acr = claims.acr ? String(claims.acr) : null;
+  if (!(acr ? ACCEPTED_ACR.includes(acr) : ALLOW_UNVERIFIED)) throw fail("verification_level_too_low", acr ?? "none");
   const authTime = Number(claims.auth_time ?? 0);
   const now = Math.floor(Date.now() / 1000);
   if (authTime > now + 60) throw fail("auth_time_in_future");

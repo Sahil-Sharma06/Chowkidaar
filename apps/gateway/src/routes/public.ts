@@ -16,6 +16,7 @@ export function toPublicMerchant(m: typeof merchants.$inferSelect): PublicMercha
     score: m.score, totalCalls: m.totalCalls, failedCalls: m.failedCalls,
     bondAvailable: String(available), covered: m.status === "live" && available >= lockFor(m.price),
     arkivEntityKey: m.arkivEntityKey,
+    category: m.category, keywords: m.keywords, description: m.description, samplePrompt: m.samplePrompt,
   };
 }
 
@@ -24,7 +25,7 @@ export function publicRoutes(db: Db) {
 
   app.get("/config", (c) => c.json({
     network: env.network, usdc: env.usdc, gatewayAccount: env.gatewayId, vaultAccount: env.vaultId,
-    hcsTopicId: env.hcsTopicId || null, hashscan: env.hashscan, facilitator: env.facilitatorUrl,
+    hcsTopicId: env.hcsTopicId || null, hashscan: env.hashscan, facilitator: env.facilitatorUrl, webOrigin: env.webOrigin, mirror: env.mirrorUrl,
     features: { world: hasWorld(), arkiv: hasArkiv(), hcs: hasHcs(), demoMode: env.demoMode },
     feeBps: env.feeBps, penaltyBps: env.penaltyBps,
   }));

@@ -44,6 +44,10 @@ export interface PublicMerchant {
   bondAvailable: string;
   covered: boolean;
   arkivEntityKey: string | null;
+  category: string;
+  keywords: string[];
+  description: string | null;
+  samplePrompt: string | null;
 }
 
 export interface PublicStats {

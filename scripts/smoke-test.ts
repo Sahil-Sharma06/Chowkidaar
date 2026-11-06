@@ -3,7 +3,7 @@
  *   npm run dev -w apps/demo-merchants   (in another terminal)
  *   npm run smoke
  *
- * 1. balances   2. real x402 payment to good-data   3. upfront + 500 (server-error)
+ * 1. balances   2. real x402 payment to hbar-price   3. upfront + 500 (dodgy-diner)
  * 4. 3-party refund tx from the vault   5. HCS message
  */
 import { Client, PrivateKey, TokenId, TopicMessageSubmitTransaction, TransferTransaction } from "@hiero-ledger/sdk";
@@ -38,12 +38,12 @@ if (before.agent < 200_000) fail("agent needs at least 0.2 USDC");
 if (before.gateway < 200_000) fail("gateway needs at least 0.2 USDC");
 
 if (!only || only === "pay") {
-  console.log("\n2. real x402 payment: agent -> demo merchant good-data");
+  console.log("\n2. real x402 payment: agent -> demo merchant hbar-price");
   const signer = createClientHederaSigner(accounts.agent, parseKey(need("AGENT_PRIVATE_KEY")), { network: "hedera:testnet" });
   const client = x402Client.fromConfig({ schemes: [{ network: "hedera:*", client: new ExactHederaScheme(signer) }], spendControls: { maxAmountPerPayment: "$5" } });
   const payFetch = wrapFetchWithPayment(fetch, client);
   try {
-    const res = await payFetch(`${MERCHANTS}/m/good-data`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(90_000) });
+    const res = await payFetch(`${MERCHANTS}/m/hbar-price`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(90_000) });
     const header = res.headers.get("payment-response");
     const settle = header ? decodePaymentResponseHeader(header) : null;
     const body = await res.text();
@@ -51,9 +51,9 @@ if (!only || only === "pay") {
     else fail(`status ${res.status} settle=${JSON.stringify(settle)} body=${body.slice(0, 200)}`);
   } catch (err) { fail(`payment threw: ${String((err as Error).message ?? err)}`); }
 
-  console.log("\n3. upfront flow with a failing handler: server-error");
+  console.log("\n3. upfront flow with a failing handler: dodgy-diner");
   try {
-    const res = await payFetch(`${MERCHANTS}/m/server-error`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(90_000) });
+    const res = await payFetch(`${MERCHANTS}/m/dodgy-diner`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(90_000) });
     const header = res.headers.get("payment-response");
     const settle = header ? decodePaymentResponseHeader(header) : null;
     if (res.status === 500 && settle?.success) ok(`status 500 but money moved: ${settle.transaction}\n    ${hashscanTx(settle.transaction)}  (this is the gap the gateway closes)`);

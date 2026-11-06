@@ -9,6 +9,7 @@ import { ApiError, get, isStepUp, patch, post, put, startStepUp, takePendingStep
 import { Alert, Badge, Field, Money, StatusBadge, fmtTime, microFromInput, usdcInput } from "@/lib/ui";
 import { reasonText } from "@/lib/world";
 import { WalletPanel } from "@/components/WalletPanel";
+import { McpSnippet } from "@/components/McpSnippet";
 
 const ERRORS: Record<string, string> = {
   daily_cap_below_per_call: "The daily cap must be at least the per-call cap.",
@@ -78,6 +79,7 @@ function AgentDetail() {
       </div>
 
       <WalletPanel agentId={a.id} accountId={a.hederaAccountId} custodial={a.custodial} />
+      {a.custodial && <McpSnippet apiKey={newKey ?? undefined} />}
 
       {stepup === "denied" && <Alert tone="red">{reasonText(params.get("reason"))} Your change was not saved.</Alert>}
       <Alert tone="blue"><ShieldCheck className="mr-1 inline h-4 w-4" />Lowering limits or pausing takes effect at once. Raising a limit, lowering the minimum score, turning off the allowlist, or replacing the API key asks you to verify with World ID first.</Alert>

@@ -4,27 +4,27 @@ import Link from "next/link";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { Bot, Send, ShieldCheck, UserRound } from "lucide-react";
-import { formatUsdc, hashscanTx, POLICY_ERROR_LABEL, REASON_LABEL, type Receipt } from "@app/shared";
+import { formatUsdc, hashscanTx, POLICY_ERROR_LABEL, REASON_LABEL, SKIP_REASON, type PublicMerchant, type Receipt } from "@app/shared";
 import { get, post, HASHSCAN, type AgentRow, type AuthConfig } from "@/lib/api";
 import { Alert, cx } from "@/lib/ui";
 import { WalletPanel } from "@/components/WalletPanel";
 
-type Cand = { id: string; slug: string; name: string; price: string; total: string; score: number | null; eligible: boolean; why: string[] };
+type Cand = { id: string; slug: string; name: string; category: string; price: string; total: string; score: number | null; matched: string[]; eligible: boolean; why: string[] };
 type Ask = {
   outcome: "delivered" | "refund_pending" | "held" | "blocked" | "error" | "no_merchant";
+  intent: { words: string[]; categories: string[] };
   scoreSource: "arkiv" | "gateway"; candidates: Cand[]; merchant: Cand | null;
   status: number | null; body: Record<string, unknown> | null; agentTx: string | null; error?: string;
 };
 type Msg = { id: number; role: "user"; text: string } | { id: number; role: "agent"; query: string; ask: Ask };
 type Retry = { approvalId: string; slug: string };
 
-const WHY: Record<string, string> = { not_allowed: "not on the allowlist", not_covered: "bond too low to cover a call", above_cap: "price above the per-call cap", low_score: "score below your minimum" };
-const SUGGESTIONS = ["What's the HBAR price right now?", "Give me the latest HBAR/USD quote", "Price check on HBAR, please"];
 const usd = (m: string | number) => formatUsdc(m);
 
 export default function ConsolePage() {
   const agents = useQuery({ queryKey: ["agents"], queryFn: () => get<AgentRow[]>("/api/agents"), retry: false, refetchInterval: 8000 });
   const auth = useQuery({ queryKey: ["auth-config"], queryFn: () => get<AuthConfig>("/api/auth/config"), staleTime: 60_000 });
+  const catalog = useQuery({ queryKey: ["owner-merchants"], queryFn: () => get<PublicMerchant[]>("/api/owner/merchants"), refetchInterval: 15_000 });
   const custodial = agents.data?.filter((a) => a.custodial) ?? [];
   const [agentId, setAgentId] = useState("");
   const [text, setText] = useState("");
@@ -34,6 +34,11 @@ export default function ConsolePage() {
   useEffect(() => { if (!agentId && custodial[0]) setAgentId(custodial[0].id); }, [custodial, agentId]);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs.length]);
   const agent = custodial.find((a) => a.id === agentId);
+  // What the merchants themselves suggest asking for; the ones this agent may pay come first.
+  const suggestions = [...new Set((catalog.data ?? [])
+    .filter((m) => m.samplePrompt && m.covered)
+    .sort((x, y) => Number(agent?.allowedMerchantIds.includes(y.id) ?? 0) - Number(agent?.allowedMerchantIds.includes(x.id) ?? 0))
+    .map((m) => m.samplePrompt!))].slice(0, 4);
 
   const ask = useMutation({
     mutationFn: ({ query, retry }: { query: string; retry?: Retry }) => post<Ask>(`/api/agents/${agentId}/ask`, { query, approvalId: retry?.approvalId, slug: retry?.slug }),
@@ -78,8 +83,11 @@ export default function ConsolePage() {
                 <Bot className="mx-auto h-8 w-8 text-secondary" />
                 <div>Every answer here is paid for with real testnet USDC from {agent?.name ?? "your agent"}&apos;s wallet.</div>
                 <div className="flex flex-wrap justify-center gap-2">
-                  {SUGGESTIONS.map((s) => <button key={s} type="button" className="btn-secondary px-3 py-1.5 text-xs" onClick={() => send(s)}>{s}</button>)}
+                  {suggestions.map((s) => <button key={s} type="button" className="btn-secondary px-3 py-1.5 text-xs" onClick={() => send(s)}>{s}</button>)}
                 </div>
+                {catalog.data && (
+                  <div className="text-xs">On offer right now: {[...new Set(catalog.data.filter((m) => m.covered).map((m) => m.category))].join(" · ") || "nothing yet"}</div>
+                )}
               </div>
             )}
             <AnimatePresence initial={false}>
@@ -140,6 +148,7 @@ function AgentBubble({ ask, agentId, agentPass, agent, onRetry }: { ask: Ask; ag
   const others = ask.candidates.filter((c) => c.eligible && c.slug !== m?.slug);
   const picked = m && (
     <div className="text-xs text-on-surface-variant">
+      Understood as <b className="text-on-surface">{m.category}</b>{ask.intent?.words.length ? <> (matched: {ask.intent.words.join(", ")})</> : null}.
       Chose <b className="text-on-surface">{m.name}</b> (score {m.score ?? "new"}, {usd(m.price)})
       {others.length > 0 && <> over {others.map((o) => `${o.name} (${o.score ?? "new"})`).join(", ")}</>} · {ask.scoreSource === "arkiv" ? "scores read from Arkiv" : "scores from the gateway"}
     </div>
@@ -176,9 +185,13 @@ function AgentBubble({ ask, agentId, agentPass, agent, onRetry }: { ask: Ask; ag
       )}
       {ask.outcome === "no_merchant" && (
         <>
-          <div>No merchant your agent may pay can take this right now. Nothing was paid.</div>
+          <div>
+            {ask.intent?.words.length
+              ? <>Understood as <b>{ask.intent.categories.join(" / ")}</b> (matched: {ask.intent.words.join(", ")}), but no merchant your agent may pay can take it right now. Nothing was paid.</>
+              : <>No merchant sells that, as far as they have told us. Nothing was paid.</>}
+          </div>
           <ul className="list-disc space-y-0.5 pl-5 text-xs text-on-surface-variant">
-            {ask.candidates.map((c) => <li key={c.id}><b className="text-on-surface">{c.name}</b> ({usd(c.price)}, score {c.score ?? "new"}): {c.why.map((w) => WHY[w] ?? w).join(", ")}</li>)}
+            {ask.candidates.map((c) => <li key={c.id}><b className="text-on-surface">{c.name}</b> · {c.category} ({usd(c.price)}, score {c.score ?? "new"}): {c.why.map((w) => SKIP_REASON[w] ?? w).join(", ")}</li>)}
           </ul>
           {agent && <Link className="text-xs underline" href={`/owner/agents/${agent.id}`}>Change the agent&apos;s permissions</Link>}
         </>

@@ -81,6 +81,7 @@ export type Bond = {
 };
 export type MerchantMe = {
   id: string; slug: string; name: string; endpointUrl: string; payoutAccountId: string; price: number; timeoutMs: number;
-  responseSchema: Record<string, unknown>; status: string; bondBalance: number; bondLocked: number; totalCalls: number; failedCalls: number;
+  responseSchema: Record<string, unknown>; category: string; keywords: string[]; description: string | null; samplePrompt: string | null;
+  status: string; bondBalance: number; bondLocked: number; totalCalls: number; failedCalls: number;
   score: number | null; arkivEntityKey: string | null; bond: Bond; total: string;
 };

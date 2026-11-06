@@ -29,6 +29,13 @@
       "when": 1793924619379,
       "tag": "0003_agent_custody",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793937778216,
+      "tag": "0004_merchant_catalog",
+      "breakpoints": true
     }
   ]
 }

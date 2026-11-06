@@ -6,9 +6,10 @@ import type { Db } from "../db/index.ts";
 import { schema } from "../db/index.ts";
 import { env } from "../env.ts";
 import { newApiKey, newId, sha256 } from "../ids.ts";
+import { askAsAgent } from "../ask.ts";
 import { consumeStepUp, requireRole, stepUpRequired, type Session } from "../auth.ts";
 import { hasAgentPass } from "../chain/agentpass.ts";
-import { lockFor, totalFor } from "../money.ts";
+import { totalFor } from "../money.ts";
 import { todaySpend } from "../policy.ts";
 import { buildReceipt } from "../receipt.ts";
 import { toPublicMerchant } from "./public.ts";
@@ -96,41 +97,7 @@ export function agentRoutes(db: Db) {
     const a = ownAgent(c, c.req.param("id"));
     if (!a) return c.json({ error: "not_found" }, 404);
     if (!a.custodialEnc) return c.json({ error: "not_custodial" }, 400);
-    const { query, approvalId, slug: pinned } = c.req.valid("json");
-
-    // Reputation as the public record on Arkiv says it; the gateway's own numbers only if Arkiv is down.
-    const scores = new Map<string, number>();
-    let scoreSource: "arkiv" | "gateway" = "gateway";
-    try {
-      const { cachedReputations } = await import("../chain/arkiv.ts");
-      // Same rule as the policy check: a merchant with fewer than 5 calls is "new", not scored.
-      for (const r of await cachedReputations()) if (r.totalCalls >= 5) scores.set(r.merchantId, r.score);
-      scoreSource = "arkiv";
-    } catch { /* fall back to local scores */ }
-
-    const allowedIds = new Set(db.select({ id: allowedMerchants.merchantId }).from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all().map((x) => x.id));
-    const candidates = db.select().from(merchants).where(eq(merchants.status, "live")).all().map((m) => {
-      const score = scoreSource === "arkiv" ? scores.get(m.id) ?? null : m.score;
-      const why: string[] = [];
-      if (a.allowlistOnly && !allowedIds.has(m.id)) why.push("not_allowed");
-      if (m.bondBalance - m.bondLocked < lockFor(m.price)) why.push("not_covered");
-      if (m.price > a.perCallCap) why.push("above_cap");
-      if (score !== null && score < a.minScore) why.push("low_score");
-      return { id: m.id, slug: m.slug, name: m.name, price: String(m.price), total: String(totalFor(m.price)), score, eligible: why.length === 0, why };
-    }).sort((x, y) => (y.score ?? 50) - (x.score ?? 50) || Number(x.price) - Number(y.price));
-
-    const chosen = pinned ? candidates.find((m) => m.slug === pinned) : candidates.find((m) => m.eligible);
-    if (!chosen) return c.json({ outcome: "no_merchant", scoreSource, candidates, merchant: null, status: null, body: null, agentTx: null });
-
-    try {
-      const { payAsAgent, unseal } = await import("../custody.ts");
-      const { walletKey, apiKey } = unseal(a.custodialEnc);
-      const r = await payAsAgent({ accountId: a.hederaAccountId, walletKey, apiKey, slug: chosen.slug, body: { query }, approvalId });
-      const outcome = r.status === 200 ? "delivered" : r.status === 502 ? "refund_pending" : r.status === 202 ? "held" : r.status === 401 || r.status === 403 ? "blocked" : "error";
-      return c.json({ outcome, scoreSource, candidates, merchant: chosen, status: r.status, body: r.body, agentTx: r.agentTx });
-    } catch (err) {
-      return c.json({ outcome: "error", scoreSource, candidates, merchant: chosen, status: null, body: null, agentTx: null, error: String((err as Error).message ?? err).slice(0, 300) });
-    }
+    return c.json(await askAsAgent(db, a, c.req.valid("json")));
   });
 
   /** Playground: the custodial agent makes one real paid call through /v1/call and reports each step. */

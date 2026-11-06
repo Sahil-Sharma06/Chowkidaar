@@ -72,6 +72,12 @@ export async function payAsAgent(opts: { accountId: string; walletKey: string; a
   const header = res.headers.get("payment-response") ?? res.headers.get("x-payment-response");
   let agentTx: string | null = null;
   if (header) { try { agentTx = decodePaymentResponseHeader(header).transaction ?? null; } catch { /* no settlement header */ } }
+  // A 402 after we paid means the gateway refused the payment; the reason travels in the x402 header.
+  let paymentError: string | null = null;
+  if (res.status === 402) {
+    const req = res.headers.get("payment-required");
+    try { paymentError = String((JSON.parse(Buffer.from(req ?? "", "base64").toString("utf8")) as { error?: string }).error ?? "payment not accepted"); } catch { paymentError = "payment not accepted"; }
+  }
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-  return { status: res.status, body, agentTx };
+  return { status: res.status, body, agentTx, paymentError };
 }

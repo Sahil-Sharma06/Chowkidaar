@@ -39,7 +39,10 @@ export default function MerchantsPage() {
               const r = byMerchant.get(m.id);
               return (
                 <tr key={m.id}>
-                  <td><div className="font-medium">{m.name}</div><div className="text-xs text-slate-500">{m.slug}</div></td>
+                  <td>
+                    <div className="flex items-center gap-2"><span className="font-medium">{m.name}</span><Badge tone="grey">{m.category}</Badge></div>
+                    <div className="text-xs text-slate-500">{m.description ?? m.slug}</div>
+                  </td>
                   <td><Money micro={m.price} /></td>
                   <td>
                     {r ? (

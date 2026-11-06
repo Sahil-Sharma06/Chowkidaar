@@ -9,7 +9,7 @@ import { x402Client } from "@x402/core/client";
 import { wrapFetchWithPayment, decodePaymentResponseHeader } from "@x402/fetch";
 import { ExactHederaScheme } from "@x402/hedera/exact/client";
 import { createClientHederaSigner, PrivateKey } from "@x402/hedera";
-import { DEMO_SCENARIOS, PIPELINE_STEPS, applyGatewayReply, formatUsdc, type DemoRunResult, type DemoStep } from "@app/shared";
+import { PIPELINE_STEPS, applyGatewayReply, formatUsdc, type DemoRunResult, type DemoStep } from "@app/shared";
 
 const env = {
   network: (process.env.HEDERA_NETWORK || "hedera:testnet") as "hedera:testnet" | "hedera:mainnet",
@@ -41,8 +41,6 @@ const client = x402Client.fromConfig({
 });
 const payFetch = wrapFetchWithPayment(fetch, client);
 
-// Scenario -> merchant slug. "over-limit" calls a 0.60 USDC merchant against a 0.50 cap.
-const SLUG: Record<string, string> = Object.fromEntries(DEMO_SCENARIOS.map((s) => [s.id, s.id === "over-limit" ? "premium-data" : s.id === "needs-approval" ? "big-ticket" : s.id]));
 
 /* ------------------------------ Arkiv read (optional) ------------------------------ */
 type Rep = { score: string | number; totalCalls: bigint | number; failedCalls: bigint | number; $key?: string } | null;
@@ -86,8 +84,9 @@ app.get("/status", async (c) => {
 
 app.post("/run", async (c) => {
   const { scenario, approvalId } = (await c.req.json().catch(() => ({}))) as { scenario?: string; approvalId?: string };
-  const slug: string | undefined = scenario ? SLUG[scenario] : undefined;
-  if (!slug) return c.json({ error: "unknown_scenario", scenarios: DEMO_SCENARIOS.map((s) => s.id) }, 400);
+  // A scenario is simply a merchant slug: the catalog decides what exists, not this file.
+  const slug = scenario && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(scenario) ? scenario : undefined;
+  if (!slug) return c.json({ error: "unknown_scenario" }, 400);
 
   const steps: DemoStep[] = [
     { key: "reputation", label: "Checked merchant reputation on Arkiv", state: "running" },

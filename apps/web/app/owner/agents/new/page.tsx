@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ApiError, GATEWAY_URL, HASHSCAN, post, type AgentRow } from "@/lib/api";
 import { Alert, CopyButton, Field, cx, microFromInput } from "@/lib/ui";
+import { McpSnippet } from "@/components/McpSnippet";
 
 export default function NewAgentPage() {
   const qc = useQueryClient();
@@ -38,6 +39,7 @@ export default function NewAgentPage() {
         <Alert tone="amber">Copy the API key now. <strong>You won&apos;t see this again.</strong>{created.custodial && " (The playground keeps its own copy for this agent.)"}</Alert>
         <div className="card flex items-center justify-between gap-2"><code className="break-all text-sm">{created.apiKey}</code><CopyButton text={created.apiKey ?? ""} /></div>
         <div className="card"><div className="mb-2 flex items-center justify-between"><span className="label mb-0">Connection snippet</span><CopyButton text={snippet} /></div><pre className="overflow-x-auto text-xs">{snippet}</pre></div>
+        {created.custodial && <McpSnippet apiKey={created.apiKey} />}
         <p className="text-sm text-on-surface-variant">Next, allow merchants on the agent page so it can pay them.</p>
         <div className="flex gap-3">
           <Link className="btn-primary" href={`/owner/agents/${created.id}`}>Open agent</Link>

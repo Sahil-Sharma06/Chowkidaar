@@ -73,6 +73,11 @@ export const merchants = sqliteTable("merchants", {
   price: integer("price").notNull(),
   timeoutMs: integer("timeout_ms").notNull().default(10000),
   responseSchema: text("response_schema", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  // What the merchant sells, in its own words. Agents route requests by matching these.
+  category: text("category").notNull().default("other"),
+  keywords: text("keywords", { mode: "json" }).$type<string[]>().notNull().default([]),
+  description: text("description"),
+  samplePrompt: text("sample_prompt"),
   status: text("status", {
     enum: ["draft", "testing", "needs_bond", "live", "paused", "suspended"],
   }).notNull().default("draft"),
