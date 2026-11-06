@@ -46,6 +46,7 @@ export const ACCEPTED_ACR = (process.env.WORLD_ACCEPTED_ACR || [
 ].join(",")).split(",").map((s) => s.trim()).filter(Boolean);
 /** Dev/testing only: accept tokens of accounts with no verification at all (portal setting "Any account"). */
 export const ALLOW_UNVERIFIED = process.env.WORLD_ALLOW_UNVERIFIED === "true";
+const LOGIN_ACR = ACCEPTED_ACR.find((a) => a.endsWith("/selfie")) ?? ACCEPTED_ACR[0] ?? "";
 const b64url = (b: Buffer) => b.toString("base64url");
 const { oidcStates } = schema;
 
@@ -64,12 +65,17 @@ export async function startAuth(db: Db, purpose: Purpose, payload: AuthPayload =
     response_type: "code", client_id: clientId, redirect_uri: redirectUri, scope: "openid",
     state, nonce, code_challenge: challenge, code_challenge_method: "S256",
   });
-  // Ask explicitly for Selfie Check or Orb (alternatives: one is enough), so people without Orb access can sign in.
-  // Voluntary preference, Selfie Check first. An *essential* acr claim listing Orb made the IdP demand an Orb
-  // account; with acr_values the IdP offers the lowest class the app's portal settings allow, and the token's
-  // acr is checked on return. Unknown values are ignored by the IdP rather than rejected.
-  q.set("acr_values", ACCEPTED_ACR.join(" "));
-  if (purpose !== "login") q.set("max_age", "0"); // step-up: a fresh verification for this action
+  if (purpose === "login") {
+    // Sign-in: acr_values chooses accepted accounts. Per World's docs "selfie" admits Selfie Check *and* Orb
+    // accounts and the first value decides the flow, so send the lowest class we accept rather than a list
+    // that could start with Orb. The returned acr is still checked against ACCEPTED_ACR in finishAuth.
+    q.set("acr_values", LOGIN_ACR);
+  } else {
+    // Step-up / approval: an *essential* acr claim is a requirement, not a preference (acr_values would let a
+    // baseline browser session be reused). The listed classes are alternatives; max_age=0 forces a fresh proof.
+    q.set("claims", JSON.stringify({ id_token: { acr: { essential: true, values: ACCEPTED_ACR } } }));
+    q.set("max_age", "0");
+  }
   return `${d.authorization_endpoint}?${q}`;
 }
 
@@ -117,7 +123,8 @@ export async function finishAuth(db: Db, params: { code?: string; state?: string
   if (claims.nonce !== p.nonce) throw fail("nonce_mismatch");
   // The token must prove one of the classes we accept; an unverified account carries no acr.
   const acr = claims.acr ? String(claims.acr) : null;
-  if (!(acr ? ACCEPTED_ACR.includes(acr) : ALLOW_UNVERIFIED)) throw fail("verification_level_too_low", acr ?? "none");
+  // Unverified accounts may only ever sign in (dev switch); a step-up or approval always needs a proven class.
+  if (!(acr ? ACCEPTED_ACR.includes(acr) : ALLOW_UNVERIFIED && p.purpose === "login")) throw fail("verification_level_too_low", acr ?? "none");
   const authTime = Number(claims.auth_time ?? 0);
   const now = Math.floor(Date.now() / 1000);
   if (authTime > now + 60) throw fail("auth_time_in_future");

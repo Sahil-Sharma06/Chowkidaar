@@ -58,7 +58,7 @@ export function authRoutes(db: Db) {
       if (a.approval.status !== "pending" || a.approval.expiresAt < Date.now()) {
         return c.redirect(web("/owner/approvals", { world: "denied", reason: "approval_expired" }));
       }
-      return c.redirect(await startAuth(db, "approval", { approvalId, accountId: s.sub }));
+      return c.redirect(await startAuth(db, "approval", { approvalId, accountId: s.sub, sessionId: s.id }));
     }
 
     if (purpose === "stepup") {
@@ -103,11 +103,20 @@ export function authRoutes(db: Db) {
 
     if (r.purpose === "approval") {
       if (!same) return c.redirect(web("/owner/approvals", { world: "denied", reason: "identity_mismatch" }));
-      const a = db.select().from(approvals).where(eq(approvals.id, r.payload.approvalId ?? "")).get();
+      // The session that started the approval must still be live (not signed out or revoked meanwhile).
+      const live = db.select({ id: sessions.id }).from(sessions)
+        .where(and(eq(sessions.id, r.payload.sessionId ?? ""), eq(sessions.accountId, acct.id), isNull(sessions.revokedAt))).get();
+      if (!live) return c.redirect(web("/owner/approvals", { world: "denied", reason: "session_ended" }));
+      // Recheck ownership and status at execution time, then approve exactly once.
+      const row = db.select({ approval: approvals, ownerId: agents.ownerId }).from(approvals)
+        .innerJoin(agents, eq(agents.id, approvals.agentId)).where(eq(approvals.id, r.payload.approvalId ?? "")).get();
+      const a = row?.ownerId === acct.id ? row.approval : undefined;
       if (!a || a.status !== "pending" || a.expiresAt < Date.now()) {
         return c.redirect(web("/owner/approvals", { world: "denied", reason: "approval_expired" }));
       }
-      db.update(approvals).set({ status: "approved" }).where(and(eq(approvals.id, a.id), eq(approvals.status, "pending"))).run();
+      const done = db.update(approvals).set({ status: "approved" })
+        .where(and(eq(approvals.id, a.id), eq(approvals.status, "pending"))).run();
+      if (done.changes !== 1) return c.redirect(web("/owner/approvals", { world: "denied", reason: "approval_expired" }));
       console.log(`[agent-pass] approval ${a.id} granted acr=${r.acr} amr=${r.amr.join(",")} auth_time=${r.authTime}`);
       return c.redirect(web("/owner/approvals", { world: "approved", approvalId: a.id }));
     }
