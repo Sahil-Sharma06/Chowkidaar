@@ -8,16 +8,14 @@ import { ArrowRight, BadgeCheck, Bot, Check, CheckCircle2, Copy, Gavel, Landmark
 import { formatUsdc, type PublicMerchant, type PublicStats, type Receipt } from "@app/shared";
 import { get, GATEWAY_URL, HASHSCAN, type Config } from "@/lib/api";
 import { cx, reasonLabel } from "@/lib/ui";
-import { CountUp, EASE, Reveal, SplitWords, Stagger, Tilt, item } from "@/components/motion";
+import { CountUp, EASE, SplitWords, Stagger, Tilt, item } from "@/components/motion";
 
 // Everything below the fold loads in its own chunk, only once the hero is on screen.
 // (next/dynamic needs the options written out literally at each call site.)
 const sections = () => import("@/components/landing/sections");
 const Pillars = dynamic(() => sections().then((m) => m.Pillars), { loading: () => <SectionSkeleton />, ssr: false });
 const Comparison = dynamic(() => sections().then((m) => m.Comparison), { loading: () => <SectionSkeleton />, ssr: false });
-const Roles = dynamic(() => sections().then((m) => m.Roles), { loading: () => <SectionSkeleton />, ssr: false });
 const LiveFeed = dynamic(() => sections().then((m) => m.LiveFeed), { loading: () => <SectionSkeleton />, ssr: false });
-const Quickstart = dynamic(() => sections().then((m) => m.Quickstart), { loading: () => <SectionSkeleton />, ssr: false });
 
 function SectionSkeleton() {
   return (
@@ -79,21 +77,7 @@ export default function Landing() {
 
       <Pillars price={price} penalty={penalty} feeBps={feeBps} penaltyBps={penaltyBps} />
       <Comparison price={price} fee={fee} penalty={penalty} penaltyBps={penaltyBps} />
-      <Roles good={good} />
       <LiveFeed receipts={receipts.data ?? []} />
-      <Quickstart gatewayUrl={GATEWAY_URL} slug={good?.slug ?? "<merchant>"} />
-
-      {/* CTA */}
-      <section className="w-full bg-surface-container-low/70 py-16">
-        <Reveal className="mx-auto max-w-4xl space-y-6 px-6 text-center">
-          <h2 className="font-display text-3xl font-semibold tracking-tight">Ready to protect your agent&apos;s capital?</h2>
-          <p className="mx-auto max-w-xl text-base text-on-surface-variant">Run a real paid call in the sandbox, or sign in with World ID to set spend caps for your own agents.</p>
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <MagneticLink href="/demo" className="btn-primary px-6 py-3">Launch sandbox demo</MagneticLink>
-            <MagneticLink href="/merchants" className="btn-secondary px-6 py-3">Browse bonded merchants</MagneticLink>
-          </div>
-        </Reveal>
-      </section>
     </div>
   );
 }

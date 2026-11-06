@@ -37,7 +37,7 @@ export function BondPanel({ merchantId }: { merchantId: string }) {
         <Row label="Memo (required)" value={b.memo} warn />
         <div className="flex gap-2">
           <input className="input" placeholder="0.0.12345@1700000000.123456789 or 0.0.12345-1700000000-123456789" value={txId} onChange={(e) => setTxId(e.target.value)} />
-          <button className="btn-primary whitespace-nowrap" disabled={!txId || deposit.isPending} onClick={() => deposit.mutate()}>Confirm deposit</button>
+          <button className="btn-primary whitespace-nowrap" disabled={!txId || deposit.isPending} onClick={() => deposit.mutate()}>{deposit.isPending ? "Checking on Hedera…" : "Confirm deposit"}</button>
         </div>
         {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
       </div>

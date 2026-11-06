@@ -105,7 +105,7 @@ function AgentDetail() {
         <Field label="Daily cap (USDC)"><input className="input" value={f.dailyCap} onChange={(e) => setF({ ...f, dailyCap: e.target.value })} /></Field>
         <Field label="Approval above (USDC)"><input className="input" value={f.approvalThreshold} onChange={(e) => setF({ ...f, approvalThreshold: e.target.value })} /></Field>
         <Field label="Min merchant score"><input className="input" type="number" min={0} max={100} value={f.minScore} onChange={(e) => setF({ ...f, minScore: e.target.value })} /></Field>
-        <div className="flex items-center gap-3 sm:col-span-4"><button className="btn-primary" disabled={update.isPending}>Save limits</button>{msg && <span className="text-sm text-slate-600">{msg}</span>}</div>
+        <div className="flex items-center gap-3 sm:col-span-4"><button className="btn-primary" disabled={update.isPending}>{update.isPending ? "Saving…" : "Save limits"}</button>{msg && <span className="text-sm text-slate-600">{msg}</span>}</div>
       </form>
 
       <section className="card space-y-3">

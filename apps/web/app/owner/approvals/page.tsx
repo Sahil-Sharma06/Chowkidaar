@@ -38,8 +38,8 @@ function Approvals() {
               <td className="flex gap-2">
                 {agentPass
                   ? <a className="btn-primary px-3 py-1" href={`/api/world/oidc/start?purpose=approval&approvalId=${a.id}`}><ShieldCheck className="h-4 w-4" /> Approve with World ID</a>
-                  : <button className="btn-primary px-3 py-1" onClick={() => decide.mutate({ id: a.id, d: "approve" })}>Approve</button>}
-                <button className="btn-secondary px-3 py-1" onClick={() => decide.mutate({ id: a.id, d: "reject" })}>Reject</button>
+                  : <button className="btn-primary px-3 py-1" disabled={decide.isPending} onClick={() => decide.mutate({ id: a.id, d: "approve" })}>{decide.isPending && decide.variables?.id === a.id && decide.variables.d === "approve" ? "Approving…" : "Approve"}</button>}
+                <button className="btn-secondary px-3 py-1" disabled={decide.isPending} onClick={() => decide.mutate({ id: a.id, d: "reject" })}>{decide.isPending && decide.variables?.id === a.id && decide.variables.d === "reject" ? "Rejecting…" : "Reject"}</button>
               </td>
             </tr>
           ))}</tbody>

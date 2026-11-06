@@ -37,15 +37,13 @@ export function Nav() {
   }, [menu]);
 
   const primary: L[] = [
-    { href: "/", label: "How it works" },
-    { href: "/demo", label: "Sandbox" },
     { href: "/merchants", label: "Merchants" },
     { href: "/receipts", label: "Receipts" },
     { href: `${REPO}/blob/main/docs/API.md`, label: "Docs", external: true },
     ...(roles?.owner ? [{ href: "/console", label: "Console" }] : []),
   ];
   const mine: L[] = [
-    ...(roles?.owner ? [{ href: "/console", label: "Agent console" }, { href: "/playground", label: "Playground" }, { href: "/owner", label: "My agents" }, { href: "/owner/approvals", label: "Approvals", badge: pending }] : []),
+    ...(roles?.owner ? [{ href: "/console", label: "Agent console" },{ href: "/owner", label: "My agents" }, { href: "/owner/approvals", label: "Approvals", badge: pending }] : []),
     ...(roles?.merchant ? [{ href: "/merchant", label: "My service" }, { href: "/merchant/bond", label: "Bond" }] : []),
     ...(me.data && !(roles?.owner && roles?.merchant) ? [{ href: "/onboarding", label: roles?.owner || roles?.merchant ? "Add a role" : "Get set up" }] : []),
   ];
@@ -113,7 +111,10 @@ export function Nav() {
           ) : (
             <Link href="/login" className="btn-primary px-3.5 py-1.5 text-xs">Sign in</Link>
           )}
-          <button type="button" className="btn-ghost p-1.5 lg:hidden" aria-label="Menu" onClick={() => setOpen((o) => !o)}>{open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
+          {/* Phones only. The wrapper carries lg:hidden because .btn-ghost's own display rule would override it. */}
+          <div className="lg:hidden">
+            <button type="button" className="btn-ghost p-1.5" aria-label="Menu" onClick={() => setOpen((o) => !o)}>{open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
+          </div>
         </div>
       </div>
 

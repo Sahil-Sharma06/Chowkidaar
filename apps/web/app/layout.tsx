@@ -7,6 +7,7 @@ import { Footer } from "@/components/Footer";
 import { Shell } from "@/components/Shell";
 import { Cursor } from "@/components/Cursor";
 import { Preloader } from "@/components/Preloader";
+import { TopLoader } from "@/components/TopLoader";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Preloader />
           <Cursor />
           <Nav />
+          <TopLoader />
           <main className="min-h-[calc(100vh-16rem)] pt-16">
             <Shell>{children}</Shell>
           </main>
