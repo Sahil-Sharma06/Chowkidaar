@@ -13,7 +13,8 @@ export type PolicyResult = PolicyOk | PolicyFail;
 
 export const APPROVAL_TTL_MS = 15 * 60 * 1000;
 
-export function todaySpend(db: Db, agentId: string, now = Date.now()): number {
+/** Net spend since UTC midnight (paid minus refunded); for one merchant when `merchantId` is given. */
+export function todaySpend(db: Db, agentId: string, now = Date.now(), merchantId?: string): number {
   const midnight = new Date(now);
   midnight.setUTCHours(0, 0, 0, 0);
   const row = db
@@ -22,7 +23,7 @@ export function todaySpend(db: Db, agentId: string, now = Date.now()): number {
       refunded: sql<number>`coalesce(sum(coalesce(${payments.refundAmount}, 0)), 0)`,
     })
     .from(payments)
-    .where(and(eq(payments.agentId, agentId), gte(payments.createdAt, midnight.getTime())))
+    .where(and(eq(payments.agentId, agentId), gte(payments.createdAt, midnight.getTime()), merchantId ? eq(payments.merchantId, merchantId) : undefined))
     .get();
   return (row?.spent ?? 0) - (row?.refunded ?? 0);
 }
@@ -32,10 +33,10 @@ export function findAgentByKey(db: Db, apiKey: string | undefined): Agent | unde
   return db.select().from(agents).where(eq(agents.apiKeyHash, sha256(apiKey))).get();
 }
 
-/** Runs the 8 policy checks in order. No money moves here. */
+/** Runs the 9 policy checks in order. No money moves here. */
 export function checkPolicy(
   db: Db,
-  input: { apiKey?: string; slug: string; approvalId?: string; now?: number },
+  input: { apiKey?: string; slug: string; approvalId?: string; now?: number; skipApproval?: boolean },
 ): PolicyResult {
   const now = input.now ?? Date.now();
 
@@ -52,10 +53,12 @@ export function checkPolicy(
   if (total > agent.perCallCap) return { ok: false, status: 403, code: "per_call_cap_exceeded" };
   if (todaySpend(db, agent.id, now) + total > agent.dailyCap) return { ok: false, status: 403, code: "daily_cap_exceeded" };
 
-  if (agent.allowlistOnly) {
-    const allowed = db.select().from(allowedMerchants)
-      .where(and(eq(allowedMerchants.agentId, agent.id), eq(allowedMerchants.merchantId, merchant.id))).get();
-    if (!allowed) return { ok: false, status: 403, code: "merchant_not_allowed" };
+  const allowed = db.select().from(allowedMerchants)
+    .where(and(eq(allowedMerchants.agentId, agent.id), eq(allowedMerchants.merchantId, merchant.id))).get();
+  if (agent.allowlistOnly && !allowed) return { ok: false, status: 403, code: "merchant_not_allowed" };
+  // Per-merchant limit: set on the allowlist row, enforced whether or not the allowlist itself is on.
+  if (allowed?.dailyCap != null && todaySpend(db, agent.id, now, merchant.id) + total > allowed.dailyCap) {
+    return { ok: false, status: 403, code: "merchant_daily_cap_exceeded" };
   }
 
   if (merchant.score !== null && merchant.score < agent.minScore) {
@@ -67,7 +70,8 @@ export function checkPolicy(
   }
 
   let approvalId: string | null = null;
-  if (total > agent.approvalThreshold) {
+  // skipApproval: the owner is setting this up in person (a subscription), which is the approval.
+  if (total > agent.approvalThreshold && !input.skipApproval) {
     const a = input.approvalId
       ? db.select().from(approvals).where(eq(approvals.id, input.approvalId)).get()
       : undefined;

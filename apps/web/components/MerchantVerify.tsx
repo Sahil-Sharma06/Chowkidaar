@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { ShieldCheck } from "lucide-react";
 import { IDKitRequestWidget, selfieCheckLegacy, type RpContext } from "@worldcoin/idkit";
 import { ApiError, get, post } from "@/lib/api";
 import { reasonText } from "@/lib/world";
@@ -13,19 +14,26 @@ import { reasonText } from "@/lib/world";
 export function MerchantVerify({ onDone, onError }: { onDone: () => void; onError: (msg: string) => void }) {
   const [open, setOpen] = useState(false);
   const [request, setRequest] = useState<{ action: string; rp_context: RpContext } | null>(null);
+  const [starting, setStarting] = useState(false);
 
   async function start() {
+    if (starting) return;
+    setStarting(true);
     try {
       setRequest(await get("/api/world/rp-context")); // expires, so always fresh
       setOpen(true);
     } catch {
-      onError("World ID verification is unavailable right now. Please try again.");
+      onError("Couldn't start World ID verification. Check your connection and try again.");
+    } finally {
+      setStarting(false);
     }
   }
 
   return (
     <>
-      <button className="btn-primary w-full" onClick={start}>Verify I&apos;m a unique human</button>
+      <button type="button" className="btn-primary w-full" onClick={start} disabled={starting}>
+        <ShieldCheck aria-hidden className="h-4 w-4" /> {starting ? "Opening World ID…" : "Verify I\u2019m a unique human"}
+      </button>
       {request && (
         <IDKitRequestWidget
           open={open}

@@ -1,0 +1,1 @@
+ALTER TABLE `allowed_merchants` ADD `daily_cap` integer;

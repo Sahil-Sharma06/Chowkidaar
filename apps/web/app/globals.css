@@ -3,83 +3,160 @@
 @source "../components";
 @source "../lib";
 
+/*
+ * Chowkidaar design tokens: a quiet light theme.
+ * White panels sit on a soft off-white page and are separated by hairlines, not glow. Ink (near-black)
+ * is the primary action and the current selection; green means money is safe or coming back.
+ * Status colours are reserved for status. Contrast: body text >= 7:1, tertiary text >= 4.5:1.
+ */
 @theme {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-geist), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-surface: #fbf8ff;
-  --color-surface-dim: #dad9e3;
-  --color-surface-variant: #e3e1ec;
-  --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #f4f2fd;
-  --color-surface-container: #eeedf7;
-  --color-surface-container-high: #e8e7f1;
-  --color-surface-container-highest: #e3e1ec;
-  --color-on-surface: #1a1b22;
-  --color-on-surface-variant: #46464b;
-  --color-outline: #77767b;
-  --color-outline-variant: #c7c6cb;
-  --color-primary: #000000;
+  --color-surface: #f7f7f8;                    /* page */
+  --color-surface-container-lowest: #ffffff;   /* panels */
+  --color-surface-container-low: #f5f5f6;      /* rows and wells inside panels */
+  --color-surface-container: #eeeef0;          /* hover, chips */
+  --color-surface-container-high: #e4e4e8;     /* tracks, pressed */
+  --color-surface-container-highest: #d7d7dc;
+  --color-surface-variant: #eeeef0;
+  --color-surface-dim: #f0f0f2;
+  --color-on-surface: #111114;                 /* 18:1 on white */
+  --color-on-surface-variant: #55555f;         /* 7.4:1 on white */
+  --color-outline: #6e6e78;                    /* tertiary text: 5.1:1 on white, 4.8:1 on wells */
+  --color-outline-variant: #e6e6ea;
+  --color-rule: #e8e8ec;                       /* hairlines between rows */
+  --color-rule-strong: #d4d4da;                /* outlined buttons, menu and panel edges */
+  --color-field: #8e8e98;                      /* input borders: 3.2:1 against white (WCAG 1.4.11) */
+
+  --color-primary: #111114;                    /* ink: primary buttons, selection, focus */
+  --color-primary-hover: #2b2b31;
   --color-on-primary: #ffffff;
-  --color-primary-fixed-dim: #c7c6cd;
-  --color-secondary: #006c4a;
-  --color-secondary-container: #82f5c1;
-  --color-on-secondary-container: #00714e;
-  --color-secondary-fixed: #85f8c4;
-  --color-error: #ba1a1a;
-  --color-error-container: #ffdad6;
-  --color-on-error-container: #93000a;
+  --color-primary-fixed-dim: #3a3a42;
+  --color-secondary: #111114;
+  --color-secondary-container: #eeeef0;
+  --color-on-secondary-container: #111114;
+  --color-secondary-fixed: #111114;
+  --color-brand: #12b76a;                      /* the mark's point of light; fills only */
+  --color-gain: #067647;                       /* money that is safe or coming back: 6.3:1 on white */
+
+  --color-ok: #067647;
+  --color-warn: #b54708;
+  --color-bad: #d92d20;
+  --color-info: #175cd3;
+  --color-ok-subtle: #ecfdf3;
+  --color-warn-subtle: #fffaeb;
+  --color-bad-subtle: #fef3f2;
+  --color-info-subtle: #eff8ff;
+  --color-primary-pressed: #000000;
+  --color-primary-subtle: #eeeef0;
+  --color-error: #d92d20;
+  --color-error-container: #fef3f2;
+  --color-on-error-container: #b42318;
+
+  --radius-panel: 24px;
+  --ease-out-soft: cubic-bezier(0.2, 0, 0, 1);
 
   --animate-marquee: marquee 45s linear infinite;
-  --animate-grid-drift: grid-drift 14s linear infinite;
-  --animate-float: float 7s ease-in-out infinite;
-  --animate-float-slow: float 11s ease-in-out infinite;
-  --animate-shimmer: shimmer 2.4s linear infinite;
-
   @keyframes marquee { to { transform: translateX(-50%); } }
-  @keyframes grid-drift { to { background-position: 48px 48px, 48px 48px; } }
-  @keyframes float { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-18px) scale(1.04); } }
-  @keyframes shimmer { to { background-position: 200% center; } }
 }
 
-:root {
-  --navy: #1a1b22;
-  --accent: #006c4a;
+:root { color-scheme: light; }
+
+/*
+ * The previous dark palette, kept as a scoped theme for surfaces that should stay dark on a light
+ * page (code editors). Tailwind utilities read these variables, so everything inside follows.
+ */
+.theme-dark {
+  color-scheme: dark;
+  --color-surface: #0b0b0d;
+  --color-surface-container-lowest: #151518;
+  --color-surface-container-low: #1c1c20;
+  --color-surface-container: #24242a;
+  --color-surface-container-high: #2e2e35;
+  --color-surface-container-highest: #393941;
+  --color-on-surface: #f4f4f6;
+  --color-on-surface-variant: #a1a1ab;
+  --color-outline: #8a8a95;
+  --color-outline-variant: #2c2c33;
+  --color-rule: #2f2f36;
+  --color-rule-strong: #43434c;
+  --color-field: #686872;
+  --color-primary: #d2ff5a;
+  --color-primary-hover: #e3ff94;
+  --color-on-primary: #0b0b0d;
+  --color-gain: #44c86d;
+  color: var(--color-on-surface);
+}
+
+html {
+  overflow-x: clip;
+  scroll-padding-block-start: 5rem; /* the sticky nav never hides a focused element */
+  scrollbar-color: var(--color-surface-container-highest) transparent;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   @apply bg-surface font-sans text-on-surface antialiased;
+  overflow-x: clip;
+  caret-color: var(--color-primary);
 }
 
-.card { @apply rounded-xl bg-surface-container-lowest p-5 shadow-sm ring-1 ring-outline-variant/30; }
+::selection { background: #d1fadf; color: #111114; }
+
+/* One focus ring for everything: an outline (survives forced-colours mode), never animated. */
+:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+h1, h2, h3 { text-wrap: balance; }
+p { text-wrap: pretty; }
+
+/* Lucide strokes scale with the icon; pin them to a weight that matches Outfit's text. */
+.lucide { stroke-width: 1.75px; }
+.lucide * { vector-effect: non-scaling-stroke; }
+
+@layer components {
+/* Panels: the one container shape. Large radius, no border, no shadow; elevation is lightness. */
+.panel { @apply rounded-[24px] border border-rule bg-surface-container-lowest p-5 shadow-[0_1px_2px_rgb(16_16_20/0.04)] sm:p-6; }
+.card { @apply rounded-[24px] border border-rule bg-surface-container-lowest p-5 shadow-[0_1px_2px_rgb(16_16_20/0.04)] sm:p-6; }
+.well { @apply rounded-2xl bg-surface-container-low; }
+
 .btn-primary,
 .btn-secondary,
-.btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-secondary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50; }
-.btn-primary { @apply bg-primary text-on-primary hover:bg-on-surface-variant; }
-.btn-secondary { @apply bg-surface-container-lowest text-on-surface shadow-sm ring-1 ring-outline-variant/30 hover:bg-surface-container-low; }
-.btn-ghost { @apply text-on-surface-variant hover:bg-surface-container; }
-.input { @apply w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary; }
-.label { @apply mb-1 block text-xs font-medium uppercase tracking-wide text-on-surface-variant; }
-.money { @apply tabular-nums; }
-.table { @apply w-full text-sm; }
-.table th { @apply border-b border-outline-variant/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-on-surface-variant; }
-.table td { @apply border-b border-surface-container px-3 py-2 align-middle; }
+.btn-ghost { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-[background-color,color,border-color,scale] duration-150 ease-out enabled:active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-55; }
+.btn-primary { @apply bg-primary text-on-primary hover:bg-primary-hover active:bg-primary-pressed; }
+.btn-secondary { @apply border border-rule-strong bg-surface-container-lowest text-on-surface shadow-[0_1px_2px_rgb(16_16_20/0.05)] hover:border-field hover:bg-surface-container-low; }
+.btn-ghost { @apply text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface; }
+a.btn-primary:active, a.btn-secondary:active, a.btn-ghost:active { scale: 0.96; }
 
-/* Landing helpers */
-.eyebrow { @apply font-mono text-[10px] font-medium uppercase tracking-[0.14em]; }
-.text-shimmer {
-  background: linear-gradient(90deg, #1a1b22 0%, #006c4a 45%, #1a1b22 60%);
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  @apply animate-shimmer;
+.input { @apply w-full rounded-xl border border-field bg-surface-container-low px-3.5 py-2.5 text-base text-on-surface outline-2 -outline-offset-1 outline-transparent placeholder:text-outline transition-[outline-color] duration-150 focus:outline-primary aria-invalid:border-bad sm:text-sm; }
+select.input { @apply appearance-none pr-9; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1ab' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.9rem center; }
+.label { @apply mb-1.5 block text-sm text-on-surface-variant; }
+.money { @apply tabular-nums; }
+
+.table { @apply w-full text-sm; }
+.table th { @apply px-3 pb-3 text-left text-xs font-normal text-on-surface-variant; }
+.table td { @apply border-t border-rule px-3 py-3 align-middle; }
+
+/* Status pills: tinted fill, coloured text. Used for payment and merchant states. */
+.pill { @apply inline-flex h-[26px] items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-xs leading-none font-medium; }
+.pill-ok { @apply bg-ok-subtle text-ok; }
+.pill-warn { @apply bg-warn-subtle text-warn; }
+.pill-bad { @apply bg-bad-subtle text-bad; }
+.pill-info { @apply bg-info-subtle text-info; }
+.pill-muted { @apply bg-surface-container text-on-surface-variant; }
+
+/* Diagonal stripes: the unused part of a budget or a bond. */
+.hatch { background-image: repeating-linear-gradient(135deg, var(--color-rule-strong) 0 6px, transparent 6px 12px); }
+
+.skeleton { @apply animate-pulse rounded-2xl bg-surface-container-low; }
 }
+
 .marquee:hover .marquee-track { animation-play-state: paused; }
 
-/* Custom cursor (mouse devices only; the class is added by <Cursor/>) */
-html.custom-cursor, html.custom-cursor * { cursor: none !important; }
-
-/* Skeleton for lazily loaded sections */
-.skeleton { @apply animate-pulse rounded-xl bg-surface-container; }
+/* Reduced motion: stop movement, keep feedback. Spinners and progress keep running; transforms don't. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .animate-pulse, .animate-marquee { animation: none; }
+  * { transition-property: color, background-color, border-color, outline-color, opacity !important; }
+}

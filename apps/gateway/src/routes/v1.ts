@@ -34,11 +34,12 @@ export function v1Routes(db: Db) {
   app.get("/agent", (c) => {
     const a = findAgentByKey(db, c.req.header("x-agent-key"));
     if (!a) return c.json({ error: "invalid_agent_key" }, 401);
-    const allowed = db.select({ id: allowedMerchants.merchantId }).from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all().map((x) => x.id);
+    const allowed = db.select().from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all();
+    const merchantCaps = Object.fromEntries(allowed.filter((x) => x.dailyCap != null).map((x) => [x.merchantId, { dailyCap: String(x.dailyCap), spentToday: String(todaySpend(db, a.id, Date.now(), x.merchantId)) }]));
     return c.json({
-      id: a.id, name: a.name, hederaAccountId: a.hederaAccountId, custodial: Boolean(a.custodialEnc), status: a.status,
+      id: a.id, name: a.name, hederaAccountId: a.hederaAccountId, uaid: a.uaid, custodial: Boolean(a.custodialEnc), status: a.status,
       perCallCap: String(a.perCallCap), dailyCap: String(a.dailyCap), approvalThreshold: String(a.approvalThreshold), minScore: a.minScore,
-      allowlistOnly: a.allowlistOnly, allowedMerchantIds: allowed, spentToday: String(todaySpend(db, a.id)),
+      allowlistOnly: a.allowlistOnly, allowedMerchantIds: allowed.map((x) => x.merchantId), merchantCaps, spentToday: String(todaySpend(db, a.id)),
     });
   });
 

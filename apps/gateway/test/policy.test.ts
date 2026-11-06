@@ -49,6 +49,19 @@ describe("policy", () => {
     expect(call(db).ok).toBe(true);
   });
 
+  it("5b. per-merchant daily cap, enforced even with the allowlist off", () => {
+    const db = freshDb(); addMerchant(db);
+    db.update(schema.agents).set({ approvalThreshold: 500_000 }).run();
+    db.update(schema.allowedMerchants).set({ dailyCap: 150_000 }).run();
+    expect(call(db).ok).toBe(true); // 102_000 fits
+    db.insert(schema.payments).values({ id: "p1", agentId: "agt_1", merchantId: "mer_good-data", price: 100_000, fee: 2_000, status: "delivered", agentTxId: "t1" }).run();
+    expect(call(db)).toMatchObject({ ok: false, code: "merchant_daily_cap_exceeded" });
+    db.update(schema.agents).set({ allowlistOnly: false }).run();
+    expect(call(db)).toMatchObject({ ok: false, code: "merchant_daily_cap_exceeded" });
+    db.update(schema.allowedMerchants).set({ dailyCap: null }).run();
+    expect(call(db).ok).toBe(true);
+  });
+
   it("6. low reputation, null score passes", () => {
     const db = freshDb(); addMerchant(db, { score: 50 });
     expect(call(db)).toMatchObject({ ok: false, code: "merchant_low_reputation" });

@@ -24,7 +24,11 @@ export const patchAgentSchema = z.object({
   status: z.enum(["active", "paused"]).optional(),
 });
 
-export const allowlistSchema = z.object({ merchantIds: z.array(z.string()) });
+/** Allowed merchants, each with an optional daily spending limit for that merchant alone (micro-USDC). */
+export const allowlistSchema = z.object({
+  merchantIds: z.array(z.string()),
+  dailyCaps: z.record(z.string(), z.number().int().positive().nullable()).default({}),
+});
 
 export const jsonSchemaObject = z.record(z.string(), z.unknown()).refine(
   (s) => s.type === "object" && Array.isArray(s.required) && s.required.length > 0,
@@ -85,6 +89,21 @@ export const askSchema = z.object({
   approvalId: z.string().optional(),
   slug: slug.optional(),
 });
+
+/** Scheduled top-ups: `times` transfers of `amount` micro-USDC, the first `everySec` from now, then every `everySec`. Max 62 days out (network limit). */
+export const scheduleFundingSchema = z.object({
+  amount: z.number().int().min(100_000).max(5_000_000),
+  everySec: z.number().int().min(120).max(30 * 86_400),
+  times: z.number().int().min(1).max(8),
+}).refine((s) => s.everySec * s.times <= 62 * 86_400, { message: "Schedules may reach at most 62 days ahead", path: ["times"] });
+
+/** Subscription: `times` protected calls to `slug`, the first `everySec` from now, each pre-paid by a Scheduled Transaction. */
+export const subscribeSchema = z.object({
+  slug,
+  everySec: z.number().int().min(120).max(30 * 86_400),
+  times: z.number().int().min(1).max(8),
+  body: z.record(z.string(), z.unknown()).default({}),
+}).refine((s) => s.everySec * s.times <= 62 * 86_400, { message: "Runs may reach at most 62 days ahead", path: ["times"] });
 
 /** Playground: the owner has a custodial agent pay a merchant for real. */
 export const playSchema = z.object({

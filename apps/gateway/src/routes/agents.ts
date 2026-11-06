@@ -1,22 +1,48 @@
 import { Hono, type Context } from "hono";
 import { zValidator } from "../validate.ts";
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
-import { allowlistSchema, applyGatewayReply, askSchema, createAgentSchema, patchAgentSchema, playSchema, PIPELINE_STEPS, type DemoRunResult } from "@app/shared";
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { allowlistSchema, applyGatewayReply, askSchema, createAgentSchema, patchAgentSchema, playSchema, scheduleFundingSchema, subscribeSchema, PIPELINE_STEPS, type DemoRunResult } from "@app/shared";
 import type { Db } from "../db/index.ts";
 import { schema } from "../db/index.ts";
-import { env } from "../env.ts";
+import { env, hasHcs } from "../env.ts";
+import { agentUaid, registrationMessage } from "../hcs14.ts";
 import { newApiKey, newId, sha256 } from "../ids.ts";
 import { askAsAgent } from "../ask.ts";
 import { consumeStepUp, requireRole, stepUpRequired, type Session } from "../auth.ts";
 import { hasAgentPass } from "../chain/agentpass.ts";
 import { totalFor } from "../money.ts";
-import { todaySpend } from "../policy.ts";
+import { checkPolicy, todaySpend } from "../policy.ts";
+import { enqueue } from "../worker.ts";
 import { buildReceipt } from "../receipt.ts";
 import { toPublicMerchant } from "./public.ts";
 
-const { agents, allowedMerchants, merchants, payments, approvals } = schema;
+const { agents, allowedMerchants, merchants, payments, approvals, fundingSchedules, subscriptions, subscriptionRuns } = schema;
 
 type Vars = { Variables: { session: Session } };
+
+/**
+ * Gives an agent its HCS-14 id and announces it on the HCS topic. Best effort: the id is stored even
+ * when the topic is off or the publish fails, so the agent is usable at once and the announcement can be retried.
+ */
+export async function registerUaid(db: Db, a: typeof agents.$inferSelect, log = console) {
+  const uaid = a.uaid ?? agentUaid({ id: a.id, name: a.name, account: a.hederaAccountId, network: env.network });
+  let uaidSeq = a.uaidSeq;
+  if (hasHcs() && uaidSeq == null) {
+    try {
+      const { publishReceipt } = await import("../chain/hedera.ts");
+      uaidSeq = await publishReceipt(registrationMessage({ uaid, name: a.name, account: a.hederaAccountId }));
+    } catch (err) { log.warn(`[hcs-14] could not announce ${a.id}: ${String(err)}`); }
+  }
+  db.update(agents).set({ uaid, uaidSeq }).where(eq(agents.id, a.id)).run();
+  return { uaid, uaidSeq };
+}
+
+/** Startup: agents created before HCS-14 support get their id now. */
+export async function backfillUaids(db: Db, log = console) {
+  const missing = db.select().from(agents).where(isNull(agents.uaid)).all();
+  for (const a of missing) await registerUaid(db, a, log);
+  if (missing.length) log.log(`[hcs-14] registered ${missing.length} agent id(s)`);
+}
 
 type Limits = { perCallCap: number; dailyCap: number; approvalThreshold: number; minScore: number; allowlistOnly: boolean };
 /** True when the change lets the agent spend more, or with less oversight, than before. */
@@ -37,9 +63,13 @@ export function agentRoutes(db: Db) {
 
   const publicAgent = (a: typeof agents.$inferSelect) => {
     const { apiKeyHash: _h, custodialEnc, ...rest } = a;
-    const allowed = db.select({ id: allowedMerchants.merchantId }).from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all();
+    const allowed = db.select().from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all();
     const last = db.select({ t: payments.createdAt }).from(payments).where(eq(payments.agentId, a.id)).orderBy(desc(payments.createdAt)).limit(1).get();
-    return { ...rest, custodial: Boolean(custodialEnc), spentToday: todaySpend(db, a.id), allowedMerchantIds: allowed.map((x) => x.id), lastPaymentAt: last?.t ?? null };
+    const scheduled = db.select().from(fundingSchedules).where(eq(fundingSchedules.agentId, a.id)).orderBy(fundingSchedules.executeAt).all()
+      .map((s) => ({ scheduleId: s.scheduleId, amount: s.amount, executeAt: s.executeAt }));
+    // Per-merchant limits with today's use, so the owner sees how much room is left at each merchant.
+    const merchantCaps = Object.fromEntries(allowed.filter((x) => x.dailyCap != null).map((x) => [x.merchantId, { dailyCap: x.dailyCap!, spentToday: todaySpend(db, a.id, Date.now(), x.merchantId) }]));
+    return { ...rest, custodial: Boolean(custodialEnc), spentToday: todaySpend(db, a.id), allowedMerchantIds: allowed.map((x) => x.merchantId), merchantCaps, lastPaymentAt: last?.t ?? null, scheduledFunding: scheduled };
   };
 
   app.get("/agents", (c) => {
@@ -69,8 +99,31 @@ export function agentRoutes(db: Db) {
     } catch (err) {
       return c.json({ error: "hedera_account_in_use", detail: String(err) }, 409);
     }
+    await registerUaid(db, db.select().from(agents).where(eq(agents.id, id)).get()!);
     const a = db.select().from(agents).where(eq(agents.id, id)).get()!;
     return c.json({ ...publicAgent(a), apiKey }, 201); // key shown once
+  });
+
+  /** Demo mode: queue `times` top-ups as Scheduled Transactions; the network moves the USDC at each time. */
+  app.post("/agents/:id/fund/schedule", zValidator("json", scheduleFundingSchema), async (c) => {
+    const a = ownAgent(c, c.req.param("id"));
+    if (!a) return c.json({ error: "not_found" }, 404);
+    if (!env.demoMode) return c.json({ error: "not_in_demo_mode" }, 403);
+    if (!a.custodialEnc) return c.json({ error: "not_custodial" }, 400);
+    const { amount, everySec, times } = c.req.valid("json");
+    const created: { scheduleId: string; amount: number; executeAt: number }[] = [];
+    try {
+      const { scheduleFunding } = await import("../custody.ts");
+      for (let i = 1; i <= times; i++) {
+        const executeAt = Date.now() + i * everySec * 1000;
+        const { scheduleId } = await scheduleFunding(a.hederaAccountId, amount, new Date(executeAt));
+        db.insert(fundingSchedules).values({ scheduleId, agentId: a.id, amount, executeAt }).run();
+        created.push({ scheduleId, amount, executeAt });
+      }
+    } catch (err) {
+      if (!created.length) return c.json({ error: "schedule_failed", detail: String(err) }, 502);
+    }
+    return c.json({ created }, 201); // partial success still reports what is on-chain
   });
 
   /** Demo mode: top up a custodial wallet with 0.5 testnet USDC from the gateway. */
@@ -86,6 +139,71 @@ export function agentRoutes(db: Db) {
     } catch (err) {
       return c.json({ error: "fund_failed", detail: String(err) }, 502);
     }
+  });
+
+  /** Subscriptions with their runs; each done run links to its payment (a normal receipt). */
+  const listSubscriptions = (agentId: string) =>
+    db.select({ sub: subscriptions, merchantName: merchants.name, merchantSlug: merchants.slug }).from(subscriptions)
+      .innerJoin(merchants, eq(merchants.id, subscriptions.merchantId))
+      .where(eq(subscriptions.agentId, agentId)).orderBy(desc(subscriptions.createdAt)).all()
+      .map((r) => ({
+        ...r.sub, merchantName: r.merchantName, merchantSlug: r.merchantSlug,
+        runs: db.select({ run: subscriptionRuns, paymentStatus: payments.status }).from(subscriptionRuns)
+          .leftJoin(payments, eq(payments.id, subscriptionRuns.paymentId))
+          .where(eq(subscriptionRuns.subscriptionId, r.sub.id)).orderBy(subscriptionRuns.n).all()
+          .map((x) => ({ ...x.run, paymentStatus: x.paymentStatus })),
+      }));
+
+  app.get("/agents/:id/subscriptions", (c) => {
+    const a = ownAgent(c, c.req.param("id"));
+    return a ? c.json(listSubscriptions(a.id)) : c.json({ error: "not_found" }, 404);
+  });
+
+  /**
+   * Subscription-style payments: the agent pre-signs one Scheduled Transaction per run (agent -> gateway,
+   * price + fee, waitForExpiry). The network moves the money at each time; the worker then performs the
+   * protected call for it. Setting it up in person is the owner's approval, so the threshold does not apply.
+   */
+  app.post("/agents/:id/subscribe", zValidator("json", subscribeSchema), async (c) => {
+    const a = ownAgent(c, c.req.param("id"));
+    if (!a) return c.json({ error: "not_found" }, 404);
+    if (!a.custodialEnc) return c.json({ error: "not_custodial" }, 400);
+    const { slug, everySec, times, body } = c.req.valid("json");
+    const { unseal, scheduleAgentPayment } = await import("../custody.ts");
+    const { apiKey, walletKey } = unseal(a.custodialEnc);
+    const policy = checkPolicy(db, { apiKey, slug, skipApproval: true });
+    if (!policy.ok) return c.json({ error: policy.code }, policy.status === 202 ? 403 : policy.status);
+    const subId = newId("sub");
+    const now = Date.now();
+    db.insert(subscriptions).values({ id: subId, agentId: a.id, merchantId: policy.merchant.id, amount: policy.total, everySec, body: JSON.stringify(body) }).run();
+    let error: string | null = null;
+    for (let n = 1; n <= times; n++) {
+      const executeAt = now + n * everySec * 1000;
+      try {
+        const { scheduleId } = await scheduleAgentPayment({ from: a.hederaAccountId, walletKey, amount: policy.total, memo: `sub:${subId}:${n}`, at: new Date(executeAt) });
+        db.insert(subscriptionRuns).values({ scheduleId, subscriptionId: subId, n, executeAt }).run();
+        enqueue(db, "subscription", { scheduleId }, executeAt - now + 15_000); // mirror node lag
+      } catch (err) { error = String(err); break; }
+    }
+    const created = listSubscriptions(a.id).find((s) => s.id === subId)!;
+    if (!created.runs.length) { db.delete(subscriptions).where(eq(subscriptions.id, subId)).run(); return c.json({ error: "schedule_failed", detail: error }, 502); }
+    return c.json({ ...created, error }, 201);
+  });
+
+  /** Cancel: deletes every run still waiting on-chain (the gateway is admin key), so no further money moves. */
+  app.delete("/agents/:id/subscriptions/:subId", async (c) => {
+    const a = ownAgent(c, c.req.param("id"));
+    if (!a) return c.json({ error: "not_found" }, 404);
+    const sub = db.select().from(subscriptions).where(and(eq(subscriptions.id, c.req.param("subId")), eq(subscriptions.agentId, a.id))).get();
+    if (!sub) return c.json({ error: "not_found" }, 404);
+    const { deleteSchedule } = await import("../custody.ts");
+    const pending = db.select().from(subscriptionRuns).where(and(eq(subscriptionRuns.subscriptionId, sub.id), eq(subscriptionRuns.status, "scheduled"), gte(subscriptionRuns.executeAt, Date.now() + 5_000))).all();
+    for (const r of pending) {
+      try { await deleteSchedule(r.scheduleId); } catch (err) { return c.json({ error: "cancel_failed", detail: String(err) }, 502); }
+      db.update(subscriptionRuns).set({ status: "cancelled" }).where(eq(subscriptionRuns.scheduleId, r.scheduleId)).run();
+    }
+    db.update(subscriptions).set({ status: "cancelled" }).where(eq(subscriptions.id, sub.id)).run();
+    return c.json({ cancelled: pending.length });
   });
 
   /**
@@ -165,15 +283,15 @@ export function agentRoutes(db: Db) {
   app.put("/agents/:id/allowlist", zValidator("json", allowlistSchema), (c) => {
     const a = ownAgent(c, c.req.param("id"));
     if (!a) return c.json({ error: "not_found" }, 404);
-    const { merchantIds } = c.req.valid("json");
+    const { merchantIds, dailyCaps } = c.req.valid("json");
     const valid = merchantIds.length
       ? db.select({ id: merchants.id }).from(merchants).where(inArray(merchants.id, merchantIds)).all().map((m) => m.id)
       : [];
     db.transaction((tx) => {
       tx.delete(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).run();
-      if (valid.length) tx.insert(allowedMerchants).values(valid.map((merchantId) => ({ agentId: a.id, merchantId }))).run();
+      if (valid.length) tx.insert(allowedMerchants).values(valid.map((merchantId) => ({ agentId: a.id, merchantId, dailyCap: dailyCaps[merchantId] ?? null }))).run();
     });
-    return c.json({ merchantIds: valid });
+    return c.json({ merchantIds: valid, dailyCaps: Object.fromEntries(valid.filter((id) => dailyCaps[id] != null).map((id) => [id, dailyCaps[id]])) });
   });
 
   app.get("/agents/:id/payments", (c) => {

@@ -6,7 +6,7 @@ import { ExactHederaScheme } from "@x402/hedera/exact/client";
 import { createClientHederaSigner, type ClientHederaSigner } from "@x402/hedera";
 import type { Db } from "./db/index.ts";
 import { schema } from "./db/index.ts";
-import type { Merchant, Payment } from "./db/schema.ts";
+import type { Agent, Merchant, Payment } from "./db/schema.ts";
 import { env } from "./env.ts";
 import { newId, sha256 } from "./ids.ts";
 import { runChecks, type CallResult, type Verdict } from "./checks.ts";
@@ -128,9 +128,78 @@ export const callMerchantLive: CallMerchant = async (merchant, body) => {
 
 const receiptUrl = (id: string) => `${env.webOrigin}/receipts/${id}`;
 
-export function makeCallHandler(deps: PipelineDeps) {
-  const { db } = deps;
+export type ProtectedCallReply = { status: 200 | 409 | 502; body: Record<string, unknown> };
 
+export interface ProtectedCallInput {
+  agent: Agent;
+  merchant: Merchant;
+  fee: number;
+  approvalId: string | null;
+  /** The agent's settled payment to the gateway: an x402 settlement, or a Scheduled Transaction that fired. */
+  settlement: { transaction: string; payer?: string | null };
+  body: string;
+  /** Set when a policy check failed after the money had already moved (subscriptions): full refund, no merchant call. */
+  blockedReason?: string;
+}
+
+/**
+ * The protected call after the agent has paid: record the settlement, lock the bond, pay and call the
+ * merchant, run the objective checks, and settle the outcome. Shared by the x402 route and subscriptions.
+ */
+export async function runProtectedCall(deps: PipelineDeps, input: ProtectedCallInput): Promise<ProtectedCallReply> {
+  const { db } = deps;
+  const { agent, merchant, fee, settlement } = input;
+
+  // The UNIQUE constraint on agent_tx_id rejects any reuse of a settlement.
+  const paymentId = newId("pay");
+  try {
+    db.insert(payments).values({
+      id: paymentId, agentId: agent.id, merchantId: merchant.id, price: merchant.price, fee,
+      status: "calling", agentTxId: settlement.transaction,
+    }).run();
+  } catch {
+    return { status: 409, body: { error: "settlement_reused" } };
+  }
+  if (input.approvalId) {
+    db.update(approvals).set({ status: "used" }).where(eq(approvals.id, input.approvalId)).run();
+  }
+
+  // Payment came from an account that is not this agent: refund in full, no merchant call.
+  if (settlement.payer && settlement.payer !== agent.hederaAccountId) {
+    return finish(deps, paymentId, merchant, null, { ok: false, reason: "payer_mismatch", detail: `payer ${settlement.payer}` }, "C", false);
+  }
+  if (input.blockedReason) {
+    return finish(deps, paymentId, merchant, null, { ok: false, reason: "gateway_error", detail: input.blockedReason }, "C", false);
+  }
+
+  const lock = lockFor(merchant.price);
+  if (!lockBond(db, merchant.id, lock)) {
+    return finish(deps, paymentId, merchant, null, { ok: false, reason: "bond_lock_failed" }, "C", false);
+  }
+
+  const result = await deps.callMerchant(merchant, input.body);
+  const verdict = runChecks(result, merchant);
+
+  if (verdict.ok) return finish(deps, paymentId, merchant, result, verdict, "delivered", true);
+
+  // Our own failure to pay is never the merchant's fault.
+  if (result.kind === "error" && result.reason === "gateway_error") {
+    return finish(deps, paymentId, merchant, result, verdict, "C", true);
+  }
+
+  let paid = result.merchantPaid;
+  if (paid === null) {
+    // Timeout or network error: the merchant may still have settled. Ask the chain.
+    if (deps.chainCheckDelayMs > 0) await new Promise((r) => setTimeout(r, deps.chainCheckDelayMs));
+    const since = Math.floor((Date.now() - result.latencyMs) / 1000) - 120;
+    const txId = await deps.gatewayPaidMerchant(merchant, since);
+    paid = txId !== null;
+    if (txId && result.kind === "error") result.merchantTxId = txId;
+  }
+  return finish(deps, paymentId, merchant, result, verdict, paid ? "A" : "B", true);
+}
+
+export function makeCallHandler(deps: PipelineDeps) {
   return async function callHandler(c: Context) {
     const settlement = requestStore.getStore()?.settlement;
     const policy = c.get("policy") as PolicyOk | undefined;
@@ -139,57 +208,12 @@ export function makeCallHandler(deps: PipelineDeps) {
       return c.json({ error: "settlement_missing" }, 500);
     }
     const { agent, merchant, fee } = policy;
-
-    // The UNIQUE constraint on agent_tx_id rejects any reuse of a settlement.
-    const paymentId = newId("pay");
-    try {
-      db.insert(payments).values({
-        id: paymentId, agentId: agent.id, merchantId: merchant.id, price: merchant.price, fee,
-        status: "calling", agentTxId: settlement.transaction,
-      }).run();
-    } catch {
-      return c.json({ error: "settlement_reused" }, 409);
-    }
-    if (policy.approvalId) {
-      db.update(approvals).set({ status: "used" }).where(eq(approvals.id, policy.approvalId)).run();
-    }
-
-    // Payment came from an account that is not this agent: refund in full, no merchant call.
-    if (settlement.payer && settlement.payer !== agent.hederaAccountId) {
-      return finish(c, deps, paymentId, merchant, null, { ok: false, reason: "payer_mismatch", detail: `payer ${settlement.payer}` }, "C", false);
-    }
-
-    const lock = lockFor(merchant.price);
-    if (!lockBond(db, merchant.id, lock)) {
-      return finish(c, deps, paymentId, merchant, null, { ok: false, reason: "bond_lock_failed" }, "C", false);
-    }
-
-    const body = await c.req.text();
-    const result = await deps.callMerchant(merchant, body);
-    const verdict = runChecks(result, merchant);
-
-    if (verdict.ok) return finish(c, deps, paymentId, merchant, result, verdict, "delivered", true);
-
-    // Our own failure to pay is never the merchant's fault.
-    if (result.kind === "error" && result.reason === "gateway_error") {
-      return finish(c, deps, paymentId, merchant, result, verdict, "C", true);
-    }
-
-    let paid = result.merchantPaid;
-    if (paid === null) {
-      // Timeout or network error: the merchant may still have settled. Ask the chain.
-      if (deps.chainCheckDelayMs > 0) await new Promise((r) => setTimeout(r, deps.chainCheckDelayMs));
-      const since = Math.floor((Date.now() - result.latencyMs) / 1000) - 120;
-      const txId = await deps.gatewayPaidMerchant(merchant, since);
-      paid = txId !== null;
-      if (txId && result.kind === "error") result.merchantTxId = txId;
-    }
-    return finish(c, deps, paymentId, merchant, result, verdict, paid ? "A" : "B", true);
+    const r = await runProtectedCall(deps, { agent, merchant, fee, approvalId: policy.approvalId, settlement, body: await c.req.text() });
+    return c.json(r.body, r.status);
   };
 }
 
 function finish(
-  c: Context,
   deps: PipelineDeps,
   paymentId: string,
   merchant: Merchant,
@@ -197,7 +221,7 @@ function finish(
   verdict: Verdict,
   kind: "delivered" | FaultCase,
   locked: boolean,
-) {
+): ProtectedCallReply {
   const { db } = deps;
   const out = outcomeFor(kind, merchant.price);
   const now = Date.now();
@@ -234,9 +258,9 @@ function finish(
   if (kind === "delivered") {
     let data: unknown = text;
     try { data = JSON.parse(text ?? ""); } catch { /* keep text */ }
-    return c.json({ outcome: "delivered", paymentId, data, receiptUrl: receiptUrl(paymentId) }, 200);
+    return { status: 200, body: { outcome: "delivered", paymentId, data, receiptUrl: receiptUrl(paymentId) } };
   }
-  return c.json({
+  return { status: 502, body: {
     outcome: "refund_pending",
     paymentId,
     reason: verdict.ok ? null : verdict.reason,
@@ -246,5 +270,5 @@ function finish(
     agentPaid: String(totalFor(merchant.price)),
     statusUrl: `${env.publicUrl}/v1/payments/${paymentId}`,
     receiptUrl: receiptUrl(paymentId),
-  }, 502);
+  } };
 }

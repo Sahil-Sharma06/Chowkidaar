@@ -26,7 +26,9 @@ Agent ── x402 (price + 2% fee, upfront) ──▶ Gateway ── x402 (price
 | **B** failed and was never paid | no | price | gateway | none |
 | **C** our fault | either | price + fee | gateway | none |
 
-Spending controls before any money moves: per-call cap, daily cap, merchant allowlist, minimum merchant score, bond coverage, and owner approval above a threshold.
+Spending controls before any money moves: per-call cap, daily cap, merchant allowlist, per-merchant daily limit, minimum merchant score, bond coverage, and owner approval above a threshold.
+
+Every agent has an **HCS-14 Universal Agent ID** (`uaid:aid:…;registry=chowkidaar;proto=x402;nativeId=hedera:testnet:0.0.x`), deterministic from its name and Hedera account, announced on the HCS topic and stamped on every receipt, so spending history has an on-Hedera subject. **Subscriptions** are recurring protected calls paid through **Hedera Scheduled Transactions**: the agent pre-signs one scheduled payment per run (agent → gateway, price + fee, `waitForExpiry`), the network moves the money at each time, and the gateway then performs the protected call for it, same checks, same refund from the bond if the merchant fails. Owners can also fund an agent on a schedule the same way.
 
 ## Stack
 
@@ -130,7 +132,7 @@ npm run build     # next build
 
 ## Hackathon tracks
 
-- **Hedera, AI Agents That Pay**: x402 endpoints settled on Hedera testnet, autonomous agent, spending controls, HCS audit log, USDC settlement.
+- **Hedera, AI Agents That Pay**: x402 endpoints settled on Hedera testnet, autonomous agent, spending controls, HCS audit log, USDC settlement, HCS-14 agent identity (registration [`0.0.11330367` seq 32](https://hashscan.io/testnet/topic/0.0.11330367?seq=32)), subscriptions via Scheduled Transactions (run [`0.0.11346321`](https://hashscan.io/testnet/schedule/0.0.11346321) fired, then the gateway paid the merchant in [`0.0.7162784@1794003316.361908020`](https://hashscan.io/testnet/transaction/0.0.7162784-1794003316-361908020) and delivered).
 - **Arkiv**: merchant reputation entities, see `arkiv/`.
 - **World ID**: merchant and owner identity, one human one merchant; debrief in `arkiv/../WORLD.md`.
 

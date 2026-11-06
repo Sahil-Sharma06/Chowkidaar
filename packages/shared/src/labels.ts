@@ -2,7 +2,7 @@ export const PAYMENT_STATUS = {
   calling: { label: "In progress", color: "blue" },
   delivered: { label: "Delivered", color: "green" },
   refund_pending: { label: "Refund in progress", color: "amber" },
-  refunded: { label: "Refunded", color: "amber" },
+  refunded: { label: "Refunded", color: "blue" },
   refund_failed: { label: "Refund failed", color: "red" },
 } as const;
 
@@ -23,6 +23,7 @@ export const POLICY_ERROR_LABEL: Record<string, string> = {
   agent_paused: "Agent is paused",
   per_call_cap_exceeded: "Above this agent's per-call limit",
   daily_cap_exceeded: "Daily limit reached",
+  merchant_daily_cap_exceeded: "Daily limit for this merchant reached",
   merchant_not_allowed: "Merchant isn't on the allowed list",
   merchant_low_reputation: "Merchant's score is below your minimum",
   merchant_not_covered: "Merchant's bond is too low to cover this call",
@@ -52,6 +53,7 @@ export const SKIP_REASON: Record<string, string> = {
   not_allowed: "not on the agent's allowlist",
   not_covered: "bond too low to cover a call",
   above_cap: "price above the per-call cap",
+  merchant_cap: "today's limit for this merchant is used up",
   low_score: "score below the agent's minimum",
   no_match: "doesn't sell what was asked for",
 };

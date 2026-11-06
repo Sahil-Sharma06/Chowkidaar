@@ -91,6 +91,7 @@ Once the owner approves (web app, World ID step-up), repeat the call with `x-app
 | `per_call_cap_exceeded` | 403 | price + fee above the per-call cap |
 | `daily_cap_exceeded` | 403 | Today's spend + this call above the daily cap |
 | `merchant_not_allowed` | 403 | Allowlist is on and the merchant is not on it |
+| `merchant_daily_cap_exceeded` | 403 | Today's spend at this merchant + this call above the per-merchant limit the owner set |
 | `merchant_low_reputation` | 403 | Merchant score below the agent's minimum (merchants with fewer than 5 calls are "new" and pass) |
 | `merchant_not_covered` | 403 | Merchant's available bond cannot cover price + penalty |
 
@@ -140,7 +141,7 @@ No auth. Returns the public merchant record plus the exact amount the agent will
 
 Header `x-agent-key`. The agent behind the key, its limits and allowlist, for MCP hosts and SDKs:
 ```json
-{ "id": "agt_...", "name": "Claude Desktop", "hederaAccountId": "0.0.x", "custodial": true, "status": "active",
+{ "id": "agt_...", "name": "Claude Desktop", "hederaAccountId": "0.0.x", "uaid": "uaid:aid:...;uid=agt_...;registry=chowkidaar;proto=x402;nativeId=hedera:testnet:0.0.x", "custodial": true, "status": "active",
   "perCallCap": "500000", "dailyCap": "5000000", "approvalThreshold": "250000", "minScore": 60, "allowlistOnly": true, "allowedMerchantIds": ["mer_..."], "spentToday": "102000" }
 ```
 
@@ -227,13 +228,17 @@ Used by the web app. All routes need a session cookie obtained through World ID 
 | Method, path | Body / notes |
 |---|---|
 | `GET /api/agents` | Your agents (see Agent record) |
-| `POST /api/agents` | `{ name, hederaAccountId?, perCallCap, dailyCap, approvalThreshold, minScore? }` (micro-USDC integers). **Omit `hederaAccountId` and the gateway creates a custodial testnet wallet** for the agent. Returns `201` with the Agent record plus `apiKey` (shown once). `409 hedera_account_in_use`, `502 wallet_create_failed`. |
+| `POST /api/agents` | `{ name, hederaAccountId?, perCallCap, dailyCap, approvalThreshold, minScore? }` (micro-USDC integers). **Omit `hederaAccountId` and the gateway creates a custodial testnet wallet** for the agent. The agent also gets an **HCS-14 Universal Agent ID** (`uaid`), announced on the HCS topic (`uaidSeq` is that message). Returns `201` with the Agent record plus `apiKey` (shown once). `409 hedera_account_in_use`, `502 wallet_create_failed`. |
 | `GET /api/agents/{id}` | One agent |
 | `PATCH /api/agents/{id}` | Any of `name, perCallCap, dailyCap, approvalThreshold, minScore, allowlistOnly, status: "active"\|"paused"`. Loosening needs step-up. `400 daily_cap_below_per_call`, `400 approval_above_per_call`. |
 | `POST /api/agents/{id}/rotate-key` | New API key (step-up). Returns the record plus `apiKey`. |
-| `PUT /api/agents/{id}/allowlist` | `{ merchantIds: [] }` → `{ merchantIds }` |
+| `PUT /api/agents/{id}/allowlist` | `{ merchantIds: [], dailyCaps?: { [merchantId]: microUsdc \| null } }` → `{ merchantIds, dailyCaps }`. A daily cap is a **per-merchant limit**: that merchant may take at most this much from the agent per UTC day, enforced even when the allowlist is off. |
 | `GET /api/agents/{id}/payments` | Receipts for this agent (last 100) |
 | `POST /api/agents/{id}/fund` | Demo mode only, custodial agents only: the gateway sends 0.5 testnet USDC to the wallet. `{ amount, txId, status }`. |
+| `POST /api/agents/{id}/fund/schedule` | Same limits. `{ amount, everySec, times }` (0.1–5 USDC, every ≥ 2 min, ≤ 8 times, ≤ 62 days ahead). Creates one Hedera **Scheduled Transaction** per top-up with `waitForExpiry`; the network executes each at its time. `201 { created: [{ scheduleId, amount, executeAt }] }`. The Agent record lists them as `scheduledFunding`. |
+| `POST /api/agents/{id}/subscribe` | Custodial agents. `{ slug, everySec, times, body? }` (every ≥ 2 min, ≤ 8 runs, ≤ 62 days ahead). Policy is checked now (the owner setting it up counts as approval), then one **Scheduled Transaction** per run is created and signed by the agent: agent → gateway for price + fee, memo `sub:<id>:<n>`, `waitForExpiry`. When the network executes a run, the worker re-checks policy and performs the protected call with that transfer as the settlement; a failed re-check refunds in full (case C). `201` with the subscription and its `runs` (`scheduleId`, `executeAt`, `status: scheduled\|done\|failed\|cancelled`, `paymentId`). `403 <policy code>`, `502 schedule_failed`. |
+| `GET /api/agents/{id}/subscriptions` | Subscriptions with runs; a done run's `paymentId` is a normal receipt. |
+| `DELETE /api/agents/{id}/subscriptions/{subId}` | Cancel: deletes every run still waiting on-chain (gateway is admin key). `{ cancelled }`. |
 | `POST /api/agents/{id}/play` | Playground: `{ slug, body?, approvalId? }`. The custodial agent makes one real `/v1/call`; returns a `DemoRunResult` (timeline steps + outcome). |
 | `POST /api/agents/{id}/ask` | Console: `{ query, approvalId?, slug? }`. The agent **chooses the merchant itself** (allowed, covered, within cap, highest Arkiv score; merchants with < 5 calls count as new), pays, and returns: `{ outcome: "delivered"\|"refund_pending"\|"held"\|"blocked"\|"error"\|"no_merchant", scoreSource: "arkiv"\|"gateway", merchant, candidates: [{ slug, name, price, total, score, eligible, why: ["not_allowed"\|"not_covered"\|"above_cap"\|"low_score"] }], status, body, agentTx }` where `body` is the raw `/v1/call` response. |
 | `GET /api/owner/payments` | Receipts across all your agents (last 50) |
@@ -246,7 +251,9 @@ Used by the web app. All routes need a session cookie obtained through World ID 
 ```json
 { "id": "agt_...", "ownerId": "acct_...", "name": "Trader", "hederaAccountId": "0.0.11332326", "custodial": true,
   "perCallCap": 500000, "dailyCap": 5000000, "approvalThreshold": 250000, "minScore": 60, "allowlistOnly": true,
-  "status": "active", "createdAt": 1793926000000, "spentToday": 104000, "allowedMerchantIds": ["mer_..."], "lastPaymentAt": 1793926300000 }
+  "status": "active", "createdAt": 1793926000000, "spentToday": 104000, "allowedMerchantIds": ["mer_..."],
+  "merchantCaps": { "mer_...": { "dailyCap": 1000000, "spentToday": 204000 } }, "lastPaymentAt": 1793926300000,
+  "uaid": "uaid:aid:...", "uaidSeq": 32, "scheduledFunding": [{ "scheduleId": "0.0.x", "amount": 500000, "executeAt": 1793998051621 }] }
 ```
 
 ### Merchant: your service (`role: merchant`, one merchant per account)

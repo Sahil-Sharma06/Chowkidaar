@@ -1,33 +1,31 @@
-import type { Metadata } from "next";
-import { Geist, Inter, JetBrains_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { JetBrains_Mono, Outfit } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { Shell } from "@/components/Shell";
-import { Cursor } from "@/components/Cursor";
-import { Preloader } from "@/components/Preloader";
 import { TopLoader } from "@/components/TopLoader";
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit", display: "swap" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Chowkidaar — Bond-backed refunds for AI agents paying over x402",
+  title: { default: "Chowkidaar: spending limits and refunds for AI agents", template: "%s · Chowkidaar" },
   description: "The gateway between autonomous agents and paid APIs on Hedera. If a service fails, the agent is refunded from the merchant's bond.",
 };
 
+export const viewport: Viewport = { themeColor: "#f7f7f8", colorScheme: "light" };
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geist.variable} ${inter.variable} ${mono.variable}`}>
+    <html lang="en" className={`${mono.variable} ${outfit.variable}`}>
       <body>
+        <a href="#main" className="sr-only rounded-full bg-primary px-4 py-2 text-sm font-medium text-on-primary focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[70]">Skip to content</a>
         <Providers>
-          <Preloader />
-          <Cursor />
           <Nav />
           <TopLoader />
-          <main className="min-h-[calc(100vh-16rem)] pt-16">
+          <main id="main" className="min-h-[calc(100dvh-4rem)]">
             <Shell>{children}</Shell>
           </main>
           <Footer />
