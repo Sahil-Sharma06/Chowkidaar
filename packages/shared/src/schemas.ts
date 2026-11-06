@@ -24,7 +24,11 @@ export const patchAgentSchema = z.object({
   status: z.enum(["active", "paused"]).optional(),
 });
 
-export const allowlistSchema = z.object({ merchantIds: z.array(z.string()) });
+/** Allowed merchants, each with an optional daily spending limit for that merchant alone (micro-USDC). */
+export const allowlistSchema = z.object({
+  merchantIds: z.array(z.string()),
+  dailyCaps: z.record(z.string(), z.number().int().positive().nullable()).default({}),
+});
 
 export const jsonSchemaObject = z.record(z.string(), z.unknown()).refine(
   (s) => s.type === "object" && Array.isArray(s.required) && s.required.length > 0,

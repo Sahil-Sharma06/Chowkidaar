@@ -62,11 +62,13 @@ export function agentRoutes(db: Db) {
 
   const publicAgent = (a: typeof agents.$inferSelect) => {
     const { apiKeyHash: _h, custodialEnc, ...rest } = a;
-    const allowed = db.select({ id: allowedMerchants.merchantId }).from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all();
+    const allowed = db.select().from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all();
     const last = db.select({ t: payments.createdAt }).from(payments).where(eq(payments.agentId, a.id)).orderBy(desc(payments.createdAt)).limit(1).get();
     const scheduled = db.select().from(fundingSchedules).where(eq(fundingSchedules.agentId, a.id)).orderBy(fundingSchedules.executeAt).all()
       .map((s) => ({ scheduleId: s.scheduleId, amount: s.amount, executeAt: s.executeAt }));
-    return { ...rest, custodial: Boolean(custodialEnc), spentToday: todaySpend(db, a.id), allowedMerchantIds: allowed.map((x) => x.id), lastPaymentAt: last?.t ?? null, scheduledFunding: scheduled };
+    // Per-merchant limits with today's use, so the owner sees how much room is left at each merchant.
+    const merchantCaps = Object.fromEntries(allowed.filter((x) => x.dailyCap != null).map((x) => [x.merchantId, { dailyCap: x.dailyCap!, spentToday: todaySpend(db, a.id, Date.now(), x.merchantId) }]));
+    return { ...rest, custodial: Boolean(custodialEnc), spentToday: todaySpend(db, a.id), allowedMerchantIds: allowed.map((x) => x.merchantId), merchantCaps, lastPaymentAt: last?.t ?? null, scheduledFunding: scheduled };
   };
 
   app.get("/agents", (c) => {
@@ -215,15 +217,15 @@ export function agentRoutes(db: Db) {
   app.put("/agents/:id/allowlist", zValidator("json", allowlistSchema), (c) => {
     const a = ownAgent(c, c.req.param("id"));
     if (!a) return c.json({ error: "not_found" }, 404);
-    const { merchantIds } = c.req.valid("json");
+    const { merchantIds, dailyCaps } = c.req.valid("json");
     const valid = merchantIds.length
       ? db.select({ id: merchants.id }).from(merchants).where(inArray(merchants.id, merchantIds)).all().map((m) => m.id)
       : [];
     db.transaction((tx) => {
       tx.delete(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).run();
-      if (valid.length) tx.insert(allowedMerchants).values(valid.map((merchantId) => ({ agentId: a.id, merchantId }))).run();
+      if (valid.length) tx.insert(allowedMerchants).values(valid.map((merchantId) => ({ agentId: a.id, merchantId, dailyCap: dailyCaps[merchantId] ?? null }))).run();
     });
-    return c.json({ merchantIds: valid });
+    return c.json({ merchantIds: valid, dailyCaps: Object.fromEntries(valid.filter((id) => dailyCaps[id] != null).map((id) => [id, dailyCaps[id]])) });
   });
 
   app.get("/agents/:id/payments", (c) => {

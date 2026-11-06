@@ -91,6 +91,7 @@ Once the owner approves (web app, World ID step-up), repeat the call with `x-app
 | `per_call_cap_exceeded` | 403 | price + fee above the per-call cap |
 | `daily_cap_exceeded` | 403 | Today's spend + this call above the daily cap |
 | `merchant_not_allowed` | 403 | Allowlist is on and the merchant is not on it |
+| `merchant_daily_cap_exceeded` | 403 | Today's spend at this merchant + this call above the per-merchant limit the owner set |
 | `merchant_low_reputation` | 403 | Merchant score below the agent's minimum (merchants with fewer than 5 calls are "new" and pass) |
 | `merchant_not_covered` | 403 | Merchant's available bond cannot cover price + penalty |
 
@@ -231,7 +232,7 @@ Used by the web app. All routes need a session cookie obtained through World ID 
 | `GET /api/agents/{id}` | One agent |
 | `PATCH /api/agents/{id}` | Any of `name, perCallCap, dailyCap, approvalThreshold, minScore, allowlistOnly, status: "active"\|"paused"`. Loosening needs step-up. `400 daily_cap_below_per_call`, `400 approval_above_per_call`. |
 | `POST /api/agents/{id}/rotate-key` | New API key (step-up). Returns the record plus `apiKey`. |
-| `PUT /api/agents/{id}/allowlist` | `{ merchantIds: [] }` → `{ merchantIds }` |
+| `PUT /api/agents/{id}/allowlist` | `{ merchantIds: [], dailyCaps?: { [merchantId]: microUsdc \| null } }` → `{ merchantIds, dailyCaps }`. A daily cap is a **per-merchant limit**: that merchant may take at most this much from the agent per UTC day, enforced even when the allowlist is off. |
 | `GET /api/agents/{id}/payments` | Receipts for this agent (last 100) |
 | `POST /api/agents/{id}/fund` | Demo mode only, custodial agents only: the gateway sends 0.5 testnet USDC to the wallet. `{ amount, txId, status }`. |
 | `POST /api/agents/{id}/fund/schedule` | Same limits. `{ amount, everySec, times }` (0.1–5 USDC, every ≥ 2 min, ≤ 8 times, ≤ 62 days ahead). Creates one Hedera **Scheduled Transaction** per top-up with `waitForExpiry`; the network executes each at its time. `201 { created: [{ scheduleId, amount, executeAt }] }`. The Agent record lists them as `scheduledFunding`. |
@@ -247,7 +248,9 @@ Used by the web app. All routes need a session cookie obtained through World ID 
 ```json
 { "id": "agt_...", "ownerId": "acct_...", "name": "Trader", "hederaAccountId": "0.0.11332326", "custodial": true,
   "perCallCap": 500000, "dailyCap": 5000000, "approvalThreshold": 250000, "minScore": 60, "allowlistOnly": true,
-  "status": "active", "createdAt": 1793926000000, "spentToday": 104000, "allowedMerchantIds": ["mer_..."], "lastPaymentAt": 1793926300000 }
+  "status": "active", "createdAt": 1793926000000, "spentToday": 104000, "allowedMerchantIds": ["mer_..."],
+  "merchantCaps": { "mer_...": { "dailyCap": 1000000, "spentToday": 204000 } }, "lastPaymentAt": 1793926300000,
+  "uaid": "uaid:aid:...", "uaidSeq": 32, "scheduledFunding": [{ "scheduleId": "0.0.x", "amount": 500000, "executeAt": 1793998051621 }] }
 ```
 
 ### Merchant: your service (`role: merchant`, one merchant per account)

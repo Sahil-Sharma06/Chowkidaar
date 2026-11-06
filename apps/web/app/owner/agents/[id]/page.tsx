@@ -57,7 +57,12 @@ function AgentDetail() {
     onSuccess: (a) => { setNewKey(a.apiKey ?? null); invalidate(); },
     onError: (e) => isStepUp(e) ? startStepUp(e.body.scope, here, { kind: "key" }) : setMsg("Could not rotate the key. Please try again."),
   });
-  const allow = useMutation({ mutationFn: (merchantIds: string[]) => put(`/api/agents/${id}/allowlist`, { merchantIds }), onSuccess: invalidate });
+  const allow = useMutation({
+    mutationFn: (body: { merchantIds: string[]; dailyCaps: Record<string, number | null> }) => put(`/api/agents/${id}/allowlist`, body),
+    onSuccess: invalidate,
+  });
+  // Per-merchant limit inputs, keyed by merchant id; saved on blur or Enter.
+  const [capInput, setCapInput] = useState<Record<string, string>>({});
 
   // Back from a step-up: finish what the owner asked for (once), or explain why it did not happen.
   const stepup = params.get("stepup");
@@ -73,6 +78,12 @@ function AgentDetail() {
   if (!agent.data) return <div className="text-sm text-slate-500">Loading…</div>;
   const a = agent.data;
   const allowed = new Set(a.allowedMerchantIds);
+  const caps = Object.fromEntries(Object.entries(a.merchantCaps).map(([k, v]) => [k, v.dailyCap])) as Record<string, number | null>;
+  const saveAllow = (ids: Set<string>, nextCaps: Record<string, number | null> = caps) => allow.mutate({ merchantIds: [...ids], dailyCaps: nextCaps });
+  const saveCap = (mid: string) => {
+    const raw = (capInput[mid] ?? "").trim();
+    try { saveAllow(allowed, { ...caps, [mid]: raw ? microFromInput(raw) : null }); setMsg(null); } catch (err) { setMsg(String((err as Error).message)); }
+  };
   const rows = payments.data?.filter((p) => filter === "all" || (filter === "delivered" ? p.status === "delivered" : p.status.startsWith("refund"))) ?? [];
 
   return (
@@ -132,14 +143,26 @@ function AgentDetail() {
         </div>
         {!a.allowlistOnly && <Alert tone="amber">Allowlist is off: this agent may pay any live, covered merchant.</Alert>}
         <table className="table">
-          <thead><tr><th>Allow</th><th>Merchant</th><th>Price</th><th>Score</th><th>Coverage</th></tr></thead>
+          <thead><tr><th>Allow</th><th>Merchant</th><th>Price</th><th>Score</th><th>Coverage</th><th title="Most this merchant may take from the agent per day (UTC). Blank: only the agent-wide caps apply.">Daily limit (USDC)</th></tr></thead>
           <tbody>{merchants.data?.map((m) => (
             <tr key={m.id}>
-              <td><input type="checkbox" checked={allowed.has(m.id)} onChange={(e) => { const next = new Set(allowed); e.target.checked ? next.add(m.id) : next.delete(m.id); allow.mutate([...next]); }} /></td>
+              <td><input type="checkbox" checked={allowed.has(m.id)} onChange={(e) => { const next = new Set(allowed); e.target.checked ? next.add(m.id) : next.delete(m.id); saveAllow(next); }} /></td>
               <td><div className="font-medium">{m.name}</div><div className="text-xs text-slate-500">{m.slug}</div></td>
               <td><Money micro={m.price} /></td>
               <td>{m.score ?? <Badge tone="blue">New</Badge>}</td>
               <td>{m.covered ? <Badge tone="green">Covered</Badge> : <Badge tone="amber">Not covered</Badge>}</td>
+              <td>
+                {allowed.has(m.id) ? (
+                  <div className="flex items-center gap-2">
+                    <input className="input w-24 py-1 text-sm" placeholder="none" aria-label={`Daily limit for ${m.name}`}
+                      value={capInput[m.id] ?? (caps[m.id] != null ? usdcInput(caps[m.id]!) : "")}
+                      onChange={(e) => setCapInput({ ...capInput, [m.id]: e.target.value })}
+                      onBlur={() => { if (m.id in capInput) saveCap(m.id); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
+                    {a.merchantCaps[m.id] && <span className="text-xs text-slate-500">used <Money micro={a.merchantCaps[m.id].spentToday} /></span>}
+                  </div>
+                ) : <span className="text-xs text-slate-400">—</span>}
+              </td>
             </tr>
           ))}</tbody>
         </table>

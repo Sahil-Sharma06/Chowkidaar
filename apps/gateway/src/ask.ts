@@ -10,6 +10,7 @@ import { schema } from "./db/index.ts";
 import type { Agent } from "./db/schema.ts";
 import { env } from "./env.ts";
 import { lockFor, rankFor, scoreFor, totalFor } from "./money.ts";
+import { todaySpend } from "./policy.ts";
 
 const { allowedMerchants, merchants } = schema;
 
@@ -57,7 +58,9 @@ export async function askAsAgent(db: Db, a: Agent, { query, approvalId, slug: pi
     scoreSource = "arkiv";
   } catch { /* fall back to local counters */ }
 
-  const allowedIds = new Set(db.select({ id: allowedMerchants.merchantId }).from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all().map((x) => x.id));
+  const allowRows = db.select().from(allowedMerchants).where(eq(allowedMerchants.agentId, a.id)).all();
+  const allowedIds = new Set(allowRows.map((x) => x.merchantId));
+  const capFor = new Map(allowRows.filter((x) => x.dailyCap != null).map((x) => [x.merchantId, x.dailyCap!]));
   // Only merchants whose own words match the request are considered: the agent never pays
   // someone for something they do not sell.
   const candidates: Candidate[] = db.select().from(merchants).where(eq(merchants.status, "live")).all().map((m) => {
@@ -70,6 +73,8 @@ export async function askAsAgent(db: Db, a: Agent, { query, approvalId, slug: pi
     if (a.allowlistOnly && !allowedIds.has(m.id)) why.push("not_allowed");
     if (m.bondBalance - m.bondLocked < lockFor(m.price)) why.push("not_covered");
     if (m.price > a.perCallCap) why.push("above_cap");
+    const cap = capFor.get(m.id);
+    if (cap != null && todaySpend(db, a.id, Date.now(), m.id) + totalFor(m.price) > cap) why.push("merchant_cap");
     if (score !== null && score < a.minScore) why.push("low_score");
     const rank = rankFor(c.total, c.failed);
     return { id: m.id, slug: m.slug, name: m.name, category: m.category, price: String(m.price), total: String(totalFor(m.price)), score, rank, calls: c.total, matched, eligible: why.length === 0, why };

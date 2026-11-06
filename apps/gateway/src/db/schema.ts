@@ -96,6 +96,8 @@ export const merchants = sqliteTable("merchants", {
 export const allowedMerchants = sqliteTable("allowed_merchants", {
   agentId: text("agent_id").notNull().references(() => agents.id),
   merchantId: text("merchant_id").notNull().references(() => merchants.id),
+  // Per-merchant spending limit (micro-USDC per UTC day). Null: only the agent-wide caps apply.
+  dailyCap: integer("daily_cap"),
 }, (t) => [uniqueIndex("uniq_allow").on(t.agentId, t.merchantId)]);
 
 export const bondLedger = sqliteTable("bond_ledger", {
