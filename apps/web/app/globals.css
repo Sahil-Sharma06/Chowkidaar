@@ -77,3 +77,9 @@ body {
   @apply animate-shimmer;
 }
 .marquee:hover .marquee-track { animation-play-state: paused; }
+
+/* Custom cursor (mouse devices only; the class is added by <Cursor/>) */
+html.custom-cursor, html.custom-cursor * { cursor: none !important; }
+
+/* Skeleton for lazily loaded sections */
+.skeleton { @apply animate-pulse rounded-xl bg-surface-container; }

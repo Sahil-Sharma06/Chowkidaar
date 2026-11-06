@@ -5,6 +5,8 @@ import { Providers } from "./providers";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { Shell } from "@/components/Shell";
+import { Cursor } from "@/components/Cursor";
+import { Preloader } from "@/components/Preloader";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -20,6 +22,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${geist.variable} ${inter.variable} ${mono.variable}`}>
       <body>
         <Providers>
+          <Preloader />
+          <Cursor />
           <Nav />
           <main className="min-h-[calc(100vh-16rem)] pt-16">
             <Shell>{children}</Shell>
