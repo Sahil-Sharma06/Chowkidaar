@@ -3,18 +3,24 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ApiError, get, type MerchantMe } from "@/lib/api";
-import { Alert, Empty } from "@/lib/ui";
+import { Empty } from "@/lib/ui";
+import { LoadError, PageHeader } from "@/components/owner/kit";
 import { BondPanel } from "@/components/BondPanel";
 
 export default function BondPage() {
   const me = useQuery({ queryKey: ["merchant-me"], queryFn: () => get<MerchantMe>("/api/merchants/me"), retry: false });
-  if (me.isLoading) return <div className="text-sm text-slate-500">Loading…</div>;
-  if (me.error instanceof ApiError && me.error.status === 404) return <Empty title="Register your service first." action={<Link href="/merchant/setup" className="btn-primary">Set up</Link>} />;
-  if (!me.data) return <Alert tone="red">Could not load your merchant.</Alert>;
+  if (me.isLoading) return <div className="space-y-5"><div className="skeleton h-10 w-48" /><div className="skeleton h-72" /></div>;
+  if (me.error instanceof ApiError && me.error.status === 404) {
+    return <Empty title="Register your service first, then post a bond to go live." action={<Link href="/merchant/setup" className="btn-primary">Set up your service</Link>} />;
+  }
+  if (!me.data) return <LoadError what="your service" retry={() => me.refetch()} />;
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Bond</h1>
-      <Alert tone="amber">Your bond is held in a custodial testnet vault in this version. A smart-contract vault is the next step.</Alert>
+    <div>
+      <PageHeader
+        title="Bond"
+        sub={<>USDC you post so agents get their money back when {me.data.name} fails. Held in a custodial testnet vault for now.</>}
+        actions={<Link href="/merchant" className="btn-ghost">Dashboard</Link>}
+      />
       <Suspense><BondPanel merchantId={me.data.id} /></Suspense>
     </div>
   );

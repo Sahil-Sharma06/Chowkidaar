@@ -2,7 +2,7 @@ export const PAYMENT_STATUS = {
   calling: { label: "In progress", color: "blue" },
   delivered: { label: "Delivered", color: "green" },
   refund_pending: { label: "Refund in progress", color: "amber" },
-  refunded: { label: "Refunded", color: "amber" },
+  refunded: { label: "Refunded", color: "blue" },
   refund_failed: { label: "Refund failed", color: "red" },
 } as const;
 

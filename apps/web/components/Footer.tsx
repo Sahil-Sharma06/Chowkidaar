@@ -1,29 +1,31 @@
 "use client";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { ShieldCheck } from "lucide-react";
-import { get, type Config } from "@/lib/api";
+import { usePathname } from "next/navigation";
+import { Logo } from "@/components/Logo";
 
 const REPO = "https://github.com/Sahil-Sharma06/Chowkidaar";
 
+/** Full footer on public pages; signed-in workspaces stay clean and get none. */
 export function Footer() {
-  const cfg = useQuery({ queryKey: ["config"], queryFn: () => get<Config>("/api/public/config"), staleTime: 60_000 });
-  const testnet = !cfg.data?.network?.includes("mainnet");
-  const link = "transition-colors hover:text-on-surface";
+  const path = usePathname();
+  if (/^\/(owner|merchant|console|playground|onboarding|login)(\/|$)/.test(path)) return null;
+  const link = "text-on-surface-variant transition-colors hover:text-on-surface";
   return (
-    <footer className="w-full border-t border-outline-variant/30 bg-surface-container-lowest py-8">
-      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 text-xs text-on-surface-variant md:flex-row lg:px-12">
-        <div className="flex flex-col items-center gap-1 md:items-start">
-          <div className="flex items-center gap-2 font-display text-sm font-semibold text-on-surface"><ShieldCheck className="h-4 w-4 text-secondary" /> Chowkidaar</div>
-          <p>© {new Date().getFullYear()} Chowkidaar{testnet ? " · Hedera testnet" : ""}</p>
+    <footer className="border-t border-rule">
+      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-12 sm:px-6 md:flex-row md:items-start md:justify-between lg:px-8">
+        <div className="max-w-xs">
+          <div className="flex items-center gap-2.5"><Logo className="h-6 w-6" /><span className="font-display font-semibold tracking-[-0.02em]">Chowkidaar</span></div>
+          <p className="mt-3 text-sm text-on-surface-variant">Spending limits and automatic refunds for AI agents that pay for APIs.</p>
         </div>
-        <nav className="flex items-center gap-6">
+        <div className="grid grid-cols-2 gap-x-16 gap-y-2 text-sm">
           <Link className={link} href="/merchants">Merchants</Link>
+          <a className={link} href={`${REPO}/blob/main/docs/API.md`} target="_blank" rel="noreferrer">API docs</a>
           <Link className={link} href="/receipts">Receipts</Link>
-          <a className={link} href={`${REPO}/blob/main/docs/API.md`} target="_blank" rel="noreferrer">Docs</a>
           <a className={link} href={REPO} target="_blank" rel="noreferrer">GitHub</a>
-        </nav>
+          <Link className={link} href="/onboarding?want=merchant">Sell an API</Link>
+        </div>
       </div>
+      <div className="mx-auto max-w-7xl px-4 pb-8 text-xs text-outline sm:px-6 lg:px-8">© {new Date().getFullYear()} Chowkidaar. Running on Hedera testnet.</div>
     </footer>
   );
 }

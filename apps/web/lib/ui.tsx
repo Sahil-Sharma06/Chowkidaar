@@ -6,16 +6,10 @@ import { HASHSCAN } from "./api";
 
 export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
-const TONE: Record<string, string> = {
-  green: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  amber: "bg-amber-50 text-amber-800 ring-amber-200",
-  red: "bg-rose-50 text-rose-700 ring-rose-200",
-  blue: "bg-blue-50 text-blue-700 ring-blue-200",
-  grey: "bg-slate-100 text-slate-700 ring-slate-200",
-};
+const PILL: Record<string, string> = { green: "pill-ok", amber: "pill-warn", red: "pill-bad", blue: "pill-info", grey: "pill-muted" };
 
-export function Badge({ tone = "grey", children }: { tone?: keyof typeof TONE | string; children: React.ReactNode }) {
-  return <span className={cx("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset", TONE[tone] ?? TONE.grey)}>{children}</span>;
+export function Badge({ tone = "grey", children }: { tone?: keyof typeof PILL | string; children: React.ReactNode }) {
+  return <span className={cx("pill", PILL[tone] ?? PILL.grey)}>{children}</span>;
 }
 
 export function StatusBadge({ status }: { status: string }) {
@@ -31,29 +25,39 @@ export function Money({ micro, className }: { micro: string | number | null | un
 
 export function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: React.ReactNode }) {
   return (
-    <div className="card">
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold money">{value}</div>
-      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
+    <div className="panel">
+      <div className="money font-display text-[28px] font-semibold leading-none tracking-tight">{value}</div>
+      <div className="mt-2 text-sm text-on-surface-variant">{label}</div>
+      {hint && <div className="mt-1 text-xs text-outline">{hint}</div>}
     </div>
   );
 }
 
 export function TxLink({ id, label, href }: { id?: string | null; label?: string; href?: string | null }) {
   const url = href ?? (id ? hashscanTx(id, HASHSCAN) : null);
-  if (!url) return <span className="text-slate-400">—</span>;
+  if (!url) return <span className="text-outline">–</span>;
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-700 hover:underline">
+    <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-on-surface underline decoration-outline underline-offset-4 transition-colors hover:text-primary hover:decoration-primary">
       {label ?? (id ? `${id.slice(0, 22)}…` : "View")} <ExternalLink className="h-3.5 w-3.5" />
     </a>
   );
 }
 
-export function CopyButton({ text }: { text: string }) {
-  const [done, setDone] = useState(false);
+/** Copies `text`. The icon cross-fades to a check and a live region says "Copied" (or why it failed). */
+export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); setState("done"); }
+    catch { setState("failed"); }
+    setTimeout(() => setState("idle"), 1600);
+  };
   return (
-    <button type="button" className="btn-ghost px-2 py-1" onClick={async () => { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1200); }} aria-label="Copy">
-      {done ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+    <button type="button" className="btn-ghost relative h-9 w-9 shrink-0 p-0 after:absolute after:-inset-1" onClick={copy} aria-label={label}>
+      <span className="grid place-items-center">
+        <Copy className={cx("h-4 w-4 transition-[opacity,scale,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)] [grid-area:1/1]", state === "idle" ? "scale-100 opacity-100 blur-none" : "scale-25 opacity-0 blur-[4px]")} />
+        <Check className={cx("h-4 w-4 text-gain transition-[opacity,scale,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)] [grid-area:1/1]", state === "done" ? "scale-100 opacity-100 blur-none" : "scale-25 opacity-0 blur-[4px]")} />
+      </span>
+      <span role="status" className="sr-only">{state === "done" ? "Copied" : state === "failed" ? "Couldn't copy. Select the text and copy it by hand." : ""}</span>
     </button>
   );
 }
@@ -63,19 +67,21 @@ export function Field({ label, children, hint }: { label: string; children: Reac
     <label className="block">
       <span className="label">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="mt-1.5 block text-xs text-outline">{hint}</span>}
     </label>
   );
 }
 
-export function Alert({ tone = "amber", children }: { tone?: "amber" | "red" | "blue" | "green"; children: React.ReactNode }) {
-  return <div className={cx("rounded-lg px-4 py-3 text-sm ring-1 ring-inset", TONE[tone])}>{children}</div>;
+const NOTE = { green: "bg-ok-subtle text-ok", amber: "bg-warn-subtle text-warn", red: "bg-bad-subtle text-bad", blue: "bg-surface-container-low text-on-surface-variant" };
+/** An inline message. Blue is neutral information, so it stays quiet. */
+export function Alert({ tone = "amber", children }: { tone?: keyof typeof NOTE; children: React.ReactNode }) {
+  return <div role={tone === "red" ? "alert" : "status"} className={cx("rounded-2xl px-4 py-3 text-sm leading-relaxed text-pretty", NOTE[tone])}>{children}</div>;
 }
 
 export function Empty({ title, action }: { title: string; action?: React.ReactNode }) {
-  return <div className="card flex flex-col items-center gap-3 py-10 text-center text-slate-500"><div>{title}</div>{action}</div>;
+  return <div className="flex flex-col items-center gap-4 rounded-[24px] border border-dashed border-rule px-6 py-14 text-center text-sm text-on-surface-variant"><div>{title}</div>{action}</div>;
 }
 
-export const fmtTime = (t: number | null | undefined) => (t ? new Date(t).toLocaleString() : "—");
+export const fmtTime = (t: number | null | undefined) => (t ? new Date(t).toLocaleString(undefined, { day: "numeric", month: "short", year: new Date(t).getFullYear() === new Date().getFullYear() ? undefined : "numeric", hour: "numeric", minute: "2-digit" }) : "–");
 export const usdcInput = (micro: number) => (micro / 1_000_000).toString();
 export const microFromInput = (s: string) => { const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(s.trim()); if (!m) throw new Error("Enter a USDC amount with up to 6 decimals"); return Number(m[1]) * 1_000_000 + Number((m[2] ?? "").padEnd(6, "0")); };

@@ -27,6 +27,7 @@ export const patch = <T,>(path: string, data: unknown) => api<T>(path, { method:
 export const put = <T,>(path: string, data: unknown) => api<T>(path, { method: "PUT", body: JSON.stringify(data) });
 export const del = <T,>(path: string) => api<T>(path, { method: "DELETE" });
 
+/** Recurring protected calls to one merchant, each run pre-paid by a Hedera Scheduled Transaction. */
 export type SubscriptionRow = {
   id: string; agentId: string; merchantId: string; merchantName: string; merchantSlug: string; amount: number; everySec: number; body: string;
   status: "active" | "cancelled"; createdAt: number;
@@ -78,9 +79,14 @@ export type Config = {
 export type AgentRow = {
   id: string; name: string; hederaAccountId: string; custodial: boolean; perCallCap: number; dailyCap: number; approvalThreshold: number; minScore: number;
   allowlistOnly: boolean; status: "active" | "paused"; createdAt: number; spentToday: number; allowedMerchantIds: string[]; lastPaymentAt: number | null; apiKey?: string;
-  uaid: string | null; uaidSeq: number | null; scheduledFunding: { scheduleId: string; amount: number; executeAt: number }[];
+  /** HCS-14 Universal Agent ID, and the HCS message that announced it. */
+  uaid: string | null; uaidSeq: number | null;
+  /** Top-ups queued as Hedera Scheduled Transactions, oldest first. */
+  scheduledFunding: ScheduledTopUp[];
+  /** Per-merchant daily limits (on allowlist rows), with what that merchant has taken today. */
   merchantCaps: Record<string, { dailyCap: number; spentToday: number }>;
 };
+export type ScheduledTopUp = { scheduleId: string; amount: number; executeAt: number };
 export type ApprovalRow = {
   id: string; agentId: string; merchantId: string; amount: number; status: string; expiresAt: number; createdAt: number;
   agentName: string; merchantName: string; merchantSlug: string; merchantScore: number | null;

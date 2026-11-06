@@ -1,9 +1,12 @@
 "use client";
 import { usePathname } from "next/navigation";
 
-/** The landing page lays out its own full-width sections; every other page gets the standard container. */
+/**
+ * The landing page and the console lay themselves out edge to edge (the console is a full-height
+ * workspace); every other page gets the standard container.
+ */
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
-  if (path === "/") return <>{children}</>;
-  return <div className="mx-auto w-full max-w-6xl px-4 py-8">{children}</div>;
+  if (path === "/" || path === "/console") return <>{children}</>;
+  return <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">{children}</div>;
 }
