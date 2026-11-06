@@ -132,7 +132,7 @@ npm run build     # next build
 
 ## Hackathon tracks
 
-- **Hedera, AI Agents That Pay**: x402 endpoints settled on Hedera testnet, autonomous agent, spending controls, HCS audit log, USDC settlement, HCS-14 agent identity (registration [`0.0.11330367` seq 32](https://hashscan.io/testnet/topic/0.0.11330367?seq=32)), scheduled funding via Scheduled Transactions (executed schedule [`0.0.11345436`](https://hashscan.io/testnet/schedule/0.0.11345436)).
+- **Hedera, AI Agents That Pay**: x402 endpoints settled on Hedera testnet, autonomous agent, spending controls, HCS audit log, USDC settlement, HCS-14 agent identity (registration [`0.0.11330367` seq 32](https://hashscan.io/testnet/topic/0.0.11330367?seq=32)), subscriptions via Scheduled Transactions (run [`0.0.11346321`](https://hashscan.io/testnet/schedule/0.0.11346321) fired, then the gateway paid the merchant in [`0.0.7162784@1794003316.361908020`](https://hashscan.io/testnet/transaction/0.0.7162784-1794003316-361908020) and delivered).
 - **Arkiv**: merchant reputation entities, see `arkiv/`.
 - **World ID**: merchant and owner identity, one human one merchant; debrief in `arkiv/../WORLD.md`.
 
