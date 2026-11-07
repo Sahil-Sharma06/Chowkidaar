@@ -134,6 +134,35 @@ npm run build     # next build
 
 - **Hedera, AI Agents That Pay**: x402 endpoints settled on Hedera testnet, autonomous agent, spending controls, HCS audit log, USDC settlement, HCS-14 agent identity (registration [`0.0.11330367` seq 32](https://hashscan.io/testnet/topic/0.0.11330367?seq=32)), subscriptions via Scheduled Transactions (run [`0.0.11346321`](https://hashscan.io/testnet/schedule/0.0.11346321) fired, then the gateway paid the merchant in [`0.0.7162784@1794003316.361908020`](https://hashscan.io/testnet/transaction/0.0.7162784-1794003316-361908020) and delivered).
 - **Arkiv**: merchant reputation entities, see `arkiv/`.
+  - Network: Rabdi testnet (chain id 7794095)
+  - Writer wallet: [`0x34CBC166F6680753Dc8E3E72e8dB4E04889Da298`](https://rabdi.explorer.arkiv.network/address/0x34CBC166F6680753Dc8E3E72e8dB4E04889Da298) (21 entities so far, e.g. [SkyCast](https://rabdi.explorer.arkiv.network/entity/0xc490d17c5f6e464398b3318c422846e295d7dd3558be118bc2252fe0168df3b2))
+  - Entity: `agent-payment-protection.merchant-reputation.v1`, one per merchant, 180-day expiry
+  - Query anyone can run (no need to trust our API):
+    ```ts
+    import { createPublicClient } from "@arkiv-network/sdk";
+    import { rabdi } from "@arkiv-network/sdk/chains";
+    import { defineSchema, dec, str, u64 } from "@arkiv-network/sdk/schema";
+    import { eq } from "@arkiv-network/sdk/query";
+    import { http } from "viem";
+
+    const MerchantReputation = defineSchema("agent-payment-protection.merchant-reputation.v1", {
+      merchantId: str().indexed(), slug: str().indexed(), score: dec().indexed(),
+      totalCalls: u64(), failedCalls: u64(), updatedAt: u64(),
+    });
+    const arkiv = createPublicClient({ chain: rabdi({ accessKey: "<your Arkiv access key>" }), transport: http() });
+
+    const { entities } = await arkiv
+      .select({ $key: true, slug: true, totalCalls: true, failedCalls: true })
+      .from(MerchantReputation)
+      .where(eq("merchantId", "mer_qKwVYW_f0gDt"))              // SkyCast
+      .ownedBy("0x34CBC166F6680753Dc8E3E72e8dB4E04889Da298")    // only our gateway's records
+      .fetch();
+    console.log(entities);
+    ```
 - **World ID**: merchant and owner identity, one human one merchant; debrief in `arkiv/../WORLD.md`.
 
-AI assistance: this codebase was written with the help of an AI coding assistant.
+Built from scratch at ETHGlobal Mumbai (November 2026).
+
+## How we used AI
+
+We used Claude Code (Anthropic) as a coding assistant throughout. It wrote a large part of the code from our instructions, mainly the gateway routes, the Arkiv and HCS workers, the World ID flows, the MCP server and the SkyCast merchant, and helped debug things like the Arkiv read hang and form validation errors. It also helped draft the docs in `arkiv/` and `WORLD.md`, which we then edited. The product idea, the bond and refund rules, which services to use, testing on testnet and every merge decision were ours.
